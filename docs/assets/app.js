@@ -1024,12 +1024,19 @@
     }
     if (r.status === 'invalid_key') {
       return { cls: 'bad', html: '<b>密钥无效</b> · 没有服务商接受这把 Key。请检查是否填错、已过期或余额不足；'
-        + '也可以在上面的「服务商」里手动指定后再试。' };
+        + '也可以在上面的「服务商」里手动指定后再试。' + detailSuffix(r) };
     }
     if (r.status === 'unreachable') {
-      return { cls: 'bad', html: '<b>网络不可用</b> · 无法连接到大模型服务，请检查网络后重试。' };
+      return { cls: 'bad', html: '<b>网络不可用</b> · 无法连接到大模型服务，请检查网络后重试；'
+        + '若是某家境外服务被墙，可在「服务商」里手动指定国内服务商。' + detailSuffix(r) };
     }
     return { cls: 'bad', html: '<b>未配置密钥</b> · 请先填写 API Key。' };
+  }
+
+  /* 把失败的具体原因（HTTP 码 / 超时 / 异常名）附在提示后面，便于排查 */
+  function detailSuffix(r) {
+    var d = r && r.detail ? String(r.detail).trim() : '';
+    return d ? '<br><span class="probe-detail">具体原因：' + esc(d) + '</span>' : '';
   }
 
   function runProbe() {

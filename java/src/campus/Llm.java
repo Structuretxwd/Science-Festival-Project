@@ -5,6 +5,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -287,7 +288,8 @@ public final class Llm {
     }
 
     boolean sawInvalid = false;
-    String lastDetail = "";
+    // 逐家记录过程，最终拼成一句可读的「具体原因」，方便界面直接显示、也方便排查
+    List<String> trail = new ArrayList<>();
     for (Provider p : queue) {
       if (p.baseUrl.isEmpty()) continue;
       Match m = probeOnce(p, k);
@@ -297,18 +299,19 @@ public final class Llm {
       }
       if ("invalid_key".equals(m.status)) {
         sawInvalid = true;
-        lastDetail = p.label + " 拒绝了这把 Key（HTTP 401/403）";
+        trail.add(p.label + " 拒绝了这个密钥（HTTP 401/403）");
       } else {
-        lastDetail = p.label + "：" + m.detail;
-        // 网络不通就不用再试其它服务商了——它们同样连不上，
-        // 继续试只会让启动白白多等好几个超时。
-        break;
+        // 这一家没探通（超时 / 被墙 / 非鉴权错误码 / 连不上）都继续试下一家。
+        // 不能一遇到失败就收工：那样会把「密钥无效」误报成「网络不可用」，
+        // 也会因为某一家的网络拦截而错过后面真正能用的服务商。
+        trail.add(p.label + "：" + m.detail);
       }
     }
 
+    String detail = String.join("；", trail);
     Match result = sawInvalid
-        ? Match.of("invalid_key", null, "", lastDetail.isEmpty() ? "试过的服务商都拒绝了这个密钥" : lastDetail)
-        : Match.of("unreachable", null, "", lastDetail.isEmpty() ? "无法连接到大模型服务" : lastDetail);
+        ? Match.of("invalid_key", null, "", detail.isEmpty() ? "试过的服务商都拒绝了这个密钥" : detail)
+        : Match.of("unreachable", null, "", detail.isEmpty() ? "无法连接到大模型服务" : detail);
     remember(result, sig);
     return result;
   }
@@ -383,6 +386,8 @@ public final class Llm {
         return Match.of("invalid_key", null, "", "HTTP " + code + " " + brief(res.body()));
       }
       return Match.of("unreachable", null, "", "HTTP " + code + " " + brief(res.body()));
+    } catch (HttpTimeoutException e) {
+      return Match.of("unreachable", null, "", "请求超时（" + llm.probeTimeoutMs + "ms）");
     } catch (IOException e) {
       return Match.of("unreachable", null, "", e.getClass().getSimpleName() + ": " + e.getMessage());
     } catch (InterruptedException e) {

@@ -231,10 +231,12 @@
         return remember(sig, empty('no_provider', 'config.json 里没有可用的服务商配置'));
       }
       var sawInvalid = false;
-      var lastDetail = '';
+      // 逐家记录过程，最终拼成一句可读的「具体原因」，方便界面直接显示、也方便排查
+      var trail = [];
 
       function attempt(i) {
         if (i >= queue.length) {
+          var detail = trail.join('；');
           return Promise.resolve({
             status: sawInvalid ? 'invalid_key' : 'unreachable',
             reachable: sawInvalid,
@@ -242,7 +244,7 @@
             model: '',
             provider: '',
             providerLabel: '',
-            detail: lastDetail || (sawInvalid ? '试过的服务商都拒绝了这个密钥' : '无法连接到大模型服务')
+            detail: detail || (sawInvalid ? '试过的服务商都拒绝了这个密钥' : '无法连接到大模型服务')
           });
         }
         var p = queue[i];
@@ -252,16 +254,14 @@
           if (r.status === 'ok') return r;
           if (r.status === 'invalid_key') {
             sawInvalid = true;
-            lastDetail = p.label + ' 拒绝了这把 Key（HTTP ' + (r.detail || '401') + '）';
+            trail.push(p.label + ' 拒绝了这个密钥（' + (r.detail || 'HTTP 401') + '）');
             return attempt(i + 1);
           }
-          // 网络不通就不用再试其它服务商了——它们同样连不上，
-          // 继续试只会让界面白白多等好几个超时。
-          return {
-            status: 'unreachable', reachable: false, valid: false,
-            model: '', provider: '', providerLabel: '',
-            detail: p.label + '：' + (r.detail || '网络不可用')
-          };
+          trail.push(p.label + '：' + (r.detail || '网络不可用'));
+          // 浏览器分不清「这家服务商没开 CORS」和「网线真的断了」，一律当成
+          // 「这一家没成」继续试下一家；最后再统一按「有没有任何一家回过 401」
+          // 来定结论——否则会把「密钥无效」误报成「网络不可用」。
+          return attempt(i + 1);
         });
       }
 
@@ -307,6 +307,7 @@
             model: '', provider: '', providerLabel: '', detail: 'HTTP ' + res.status
           };
         }
+        // 服务商已经答话了（只是没给 200），继续试下一家
         return {
           status: 'unreachable', reachable: false, valid: false,
           model: '', provider: '', providerLabel: '', detail: 'HTTP ' + res.status
@@ -316,7 +317,7 @@
         return {
           status: 'unreachable', reachable: false, valid: false,
           model: '', provider: '', providerLabel: '',
-          detail: isTimeout(err) ? '请求超时' : String((err && err.message) || err)
+          detail: isTimeout(err) ? '请求超时（' + (c.probeTimeoutMs || 2500) + 'ms）' : String((err && err.message) || err)
         };
       });
   }

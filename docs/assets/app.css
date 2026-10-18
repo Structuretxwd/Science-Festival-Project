@@ -1134,6 +1134,8 @@ input, textarea, button { font-family: inherit; }
 .probe.ok { color: var(--ok); background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 28%, transparent); }
 .probe.bad { color: var(--warn); background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 28%, transparent); }
 .probe code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+/* 密钥检测失败时的「具体原因」，例如“HTTP 401”或“请求超时（2500ms）” */
+.probe-detail { display: inline-block; margin-top: 4px; color: var(--text-3); }
 
 .panel-note {
   margin-top: 22px;
