@@ -1,0 +1,31 @@
+{
+  "_note": "词组级同义词表。归一化阶段会对文本做整串替换：先按所有 variant 长度从长到短排序，把命中的 variant 整串替换为对应 canonical。因此禁止出现「某个 variant 是某个 canonical 的子串」或「variant 之间互相包含」的情况，否则会产生嵌套替换错误（构建脚本 tools/check-synonyms.js 会校验这一点）。",
+  "groups": [
+    { "canonical": "食堂", "variants": ["餐厅", "饭堂", "饭厅", "伙食"] },
+    { "canonical": "老师", "variants": ["教师", "教员"] },
+    { "canonical": "宿舍", "variants": ["寝室", "住宿"] },
+    { "canonical": "校园卡", "variants": ["校卡", "饭卡", "一卡通"] },
+    { "canonical": "图书馆", "variants": ["图书室"] },
+    { "canonical": "医务室", "variants": ["校医室", "卫生室"] },
+    { "canonical": "心理咨询", "variants": ["心理辅导"] },
+    { "canonical": "请假", "variants": ["告假"] },
+    { "canonical": "失物招领", "variants": ["招领处"] },
+    { "canonical": "社团", "variants": ["俱乐部"] },
+    { "canonical": "游泳馆", "variants": ["游泳池", "泳池"] },
+    { "canonical": "操场", "variants": ["运动场"] },
+    { "canonical": "收费", "variants": ["学费", "费用"] },
+    { "canonical": "招生", "variants": ["招录"] },
+    { "canonical": "校服", "variants": ["制服"] },
+    { "canonical": "考试", "variants": ["测验", "期末考"] },
+    { "canonical": "建队日", "variants": ["少先队日"] },
+    { "canonical": "公众号", "variants": ["微信公众号"] },
+    { "canonical": "三个面向", "variants": ["三个面像"] },
+    { "canonical": "几点", "variants": ["什么时候", "啥时候"] },
+    { "canonical": "多少", "variants": ["几个"] },
+    { "canonical": "怎么", "variants": ["如何"] },
+    { "canonical": "怎么办", "variants": ["咋办", "怎么弄"] },
+    { "canonical": "是什么", "variants": ["是啥"] },
+    { "canonical": "能不能", "variants": ["可不可以", "能否"] },
+    { "canonical": "在哪", "variants": ["在哪里"] }
+  ]
+}

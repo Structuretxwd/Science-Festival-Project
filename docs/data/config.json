@@ -1,0 +1,44 @@
+{
+  "_note": "离线检索引擎参数。Java 引擎与 JS 引擎必须读取同一份文件，任何一方都不得硬编码。改这里会同时影响两个实现。",
+  "bm25": {
+    "k1": 1.2,
+    "b": 0.75
+  },
+  "tokenWeights": {
+    "bigram": 1.0,
+    "unigram": 0.45
+  },
+  "fieldWeights": {
+    "question": 3.0,
+    "altQuestions": 2.0,
+    "keywords": 2.5,
+    "answer": 1.0
+  },
+  "confidence": {
+    "_note": "coverage = 命中的不同查询词数 / 查询词总数；gapRatio = (top1分数 - top2分数) / top1分数",
+    "highCoverage": 0.7,
+    "midCoverage": 0.35,
+    "highGapRatio": 0.12
+  },
+  "maxCandidates": 3,
+  "messages": {
+    "_note": "两个引擎共用同一套话术，避免文案跑偏",
+    "lowFallback": "这个问题我还没学到，抱歉。\n我目前只掌握校园相关的信息，你可以换个说法，或者问得更具体一点。\n如果开启联网大模型模式，我也可以用通用知识试着回答你。",
+    "midPrefix": "我理解得可能不准确，先给你这个答案：",
+    "lowNotice": "离线知识库未命中",
+    "midNotice": "离线知识库匹配度一般"
+  },
+  "llm": {
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-chat",
+    "probePath": "/models",
+    "chatPath": "/chat/completions",
+    "probeTimeoutMs": 2500,
+    "chatTimeoutMs": 30000,
+    "historyTurns": 6,
+    "temperature": 0.3
+  },
+  "server": {
+    "preferredPort": 8080
+  }
+}

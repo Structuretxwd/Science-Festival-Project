@@ -1,0 +1,33 @@
+{
+  "_note": "双引擎等价性测试用例。Java 的 campus.SelfTest 与 tools/js-selftest.js 读同一份文件，必须给出完全相同的 top1 与 confidence 分档。expectConfidence 为 null 时只校验 top1。",
+  "cases": [
+    { "query": "食堂几点开饭", "expectId": "life-canteen-time", "expectConfidence": "high", "note": "标准问法" },
+    { "query": "食唐几点开饭", "expectId": "life-canteen-time", "expectConfidence": "mid", "note": "错别字：不做自动纠错（见 engine 中的说明），靠单字召回命中，置信度降级为 mid" },
+    { "query": "餐厅几点开饭", "expectId": "life-canteen-time", "expectConfidence": "high", "note": "同义词替换：餐厅→食堂" },
+    { "query": "饭堂营业时间", "expectId": "life-canteen-time", "expectConfidence": null, "note": "同义词替换：饭堂→食堂" },
+    { "query": "食堂什么时候开门", "expectId": "life-canteen-time", "expectConfidence": "high", "note": "疑问词归一：什么时候→几点" },
+    { "query": "学校的校训是什么", "expectId": "idea-motto", "expectConfidence": null, "note": "办学理念类" },
+    { "query": "我们学校是一所什么学校", "expectId": "school-what-is-it", "expectConfidence": null, "note": "学校概况" },
+    { "query": "学校每班多少人", "expectId": "school-class-size", "expectConfidence": null, "note": "容易与 school-scale 混淆" },
+    { "query": "学校一共有多少个班", "expectId": "school-scale", "expectConfidence": null, "note": "多少/几个 归一测试" },
+    { "query": "校长叫什么", "expectId": "teacher-principal", "expectConfidence": null, "note": "师资" },
+    { "query": "老师都是什么学历", "expectId": "teacher-qualification", "expectConfidence": null, "note": "师资" },
+    { "query": "小悟空空间站是什么", "expectId": "smart-ai-base", "expectConfidence": null, "note": "智慧校园" },
+    { "query": "怎么请假", "expectId": "life-leave", "expectConfidence": null, "note": "校园生活" },
+    { "query": "图书馆一次能借几本书", "expectId": "life-library-borrow", "expectConfidence": null, "note": "校园生活" },
+    { "query": "建队日是哪天", "expectId": "activity-team-day", "expectConfidence": null, "note": "校园活动" },
+    { "query": "学校在哪里", "expectId": "school-address", "expectConfidence": null, "note": "同义疑问：在哪里→在哪" },
+    { "query": "能住宿吗", "expectId": "life-dorm", "expectConfidence": null, "note": "住宿→宿舍 归一" },
+    { "query": "校园卡丢了怎么办", "expectId": "life-card-lost", "expectConfidence": null, "note": "校园生活" },
+    { "query": "怎么联系学校", "expectId": "contact-school", "expectConfidence": null, "note": "联系方式" },
+    { "query": "校服什么时候穿", "expectId": "life-uniform", "expectConfidence": null, "note": "校园生活" },
+    { "query": "入学年龄是几岁", "expectId": "admission-age", "expectConfidence": null, "note": "招生入学" },
+    { "query": "三个面向指的是什么", "expectId": "idea-three-orientations", "expectConfidence": null, "note": "办学理念" },
+    { "query": "游泳馆怎么用", "expectId": "life-pool", "expectConfidence": null, "note": "同义：怎么用" },
+    { "query": "上下学有校车吗", "expectId": "life-transport", "expectConfidence": null, "note": "校园生活" },
+    { "query": "你会做什么", "expectId": "meta-fallback", "expectConfidence": null, "note": "兜底条目" },
+    { "query": "今天天气怎么样", "expectId": null, "expectConfidence": "low", "note": "知识库外问题，应当明确答不上来" },
+    { "query": "帮我订一张去上海的火车票", "expectId": null, "expectConfidence": "low", "note": "超出校园助手能力边界" },
+    { "query": "asdfghjkl", "expectId": null, "expectConfidence": "low", "note": "纯噪声输入" }
+  ]
+}
