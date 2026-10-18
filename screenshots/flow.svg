@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" width="900" height="620" role="img" aria-label="小助手的分级路由流程：先离线检索，置信度够高就直接答；不够高且配了密钥时才交给大模型">
+  <defs>
+    <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/>
+    </marker>
+    <style>
+      .bx   { fill:#eef2ff; stroke:#c7d2fe; stroke-width:1.5; }
+      .bx-t { fill:#3730a3; font:600 13px "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; text-anchor:middle; }
+      .dia  { fill:#f5f3ff; stroke:#ddd6fe; stroke-width:1.5; }
+      .dia-t{ fill:#5b21b6; font:600 13px "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; text-anchor:middle; }
+      .ok   { fill:#ecfdf5; stroke:#a7f3d0; stroke-width:1.5; }
+      .ok-t { fill:#047857; font:600 13px "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+      .on   { fill:#eff6ff; stroke:#bfdbfe; stroke-width:1.5; }
+      .on-t { fill:#1d4ed8; font:600 13px "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+      .no   { fill:#f8fafc; stroke:#e2e8f0; stroke-width:1.5; }
+      .no-t { fill:#475569; font:600 13px "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+      .sub  { fill:#64748b; font:12px "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+      .ln   { stroke:#94a3b8; stroke-width:1.5; fill:none; marker-end:url(#arw); }
+      .lb   { fill:#64748b; font:12px "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+    </style>
+  </defs>
+
+  <!-- 主干：输入 → 三步离线流水线 -->
+  <rect class="bx" x="70" y="16" width="220" height="54" rx="14"/>
+  <text class="bx-t" x="180" y="49">你问一句话</text>
+
+  <path class="ln" d="M180 70 L180 100"/>
+
+  <rect class="bx" x="70" y="104" width="220" height="54" rx="14"/>
+  <text class="bx-t" x="180" y="137">归一化 · 同义词 · 分词</text>
+
+  <path class="ln" d="M180 158 L180 188"/>
+
+  <rect class="bx" x="70" y="192" width="220" height="54" rx="14"/>
+  <text class="bx-t" x="180" y="225">BM25 打分 · 加权覆盖率</text>
+
+  <path class="ln" d="M180 246 L180 264"/>
+
+  <!-- 判定一：置信度够不够 -->
+  <path class="dia" d="M180 266 L298 322 L180 378 L62 322 Z"/>
+  <text class="dia-t" x="180" y="326">置信度够高吗？</text>
+
+  <!-- 高置信 → 直接答 -->
+  <path class="ln" d="M298 322 L424 322"/>
+  <text class="lb" x="306" y="313">高置信</text>
+  <rect class="ok" x="430" y="294" width="360" height="58" rx="14"/>
+  <text class="ok-t" x="446" y="318">直接返回知识库原文 + 出处</text>
+  <text class="sub" x="446" y="337">答案可复现，不花 token，不联网</text>
+
+  <!-- 中/低置信 → 判定二 -->
+  <path class="ln" d="M180 378 L180 406"/>
+  <text class="lb" x="188" y="396">中 / 低置信</text>
+
+  <path class="dia" d="M180 408 L284 458 L180 508 L76 458 Z"/>
+  <text class="dia-t" x="180" y="462">有可用密钥吗？</text>
+
+  <!-- 有 Key → 大模型 -->
+  <path class="ln" d="M284 458 L424 458"/>
+  <text class="lb" x="292" y="449">有</text>
+  <rect class="on" x="430" y="429" width="360" height="58" rx="14"/>
+  <text class="on-t" x="446" y="453">参考检索结果交给 DeepSeek 作答</text>
+  <text class="sub" x="446" y="472">只在这时联网；失败就静默退回离线答案</text>
+
+  <!-- 无 Key → 照实说 -->
+  <path class="ln" d="M180 508 L180 538"/>
+  <text class="lb" x="188" y="528">无</text>
+  <rect class="no" x="70" y="540" width="260" height="58" rx="14"/>
+  <text class="no-t" x="88" y="564">照实说「这个问题我还没学到」</text>
+  <text class="sub" x="88" y="583">并给出「升级到联网」的入口</text>
+
+  <!-- 右上空白区：说明标注 -->
+  <rect x="430" y="30" width="200" height="26" rx="13" fill="#e0e7ff"/>
+  <text x="530" y="47" style="text-anchor:middle;fill:#4338ca;font:600 12px &quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif">全程离线可跑</text>
+
+  <rect x="430" y="110" width="360" height="104" rx="14" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="446" y="136" style="fill:#334155;font:600 12.5px &quot;Segoe UI&quot;,&quot;PingFang SC&quot;,&quot;Microsoft YaHei&quot;,sans-serif">密钥从哪来（优先级从高到低）</text>
+  <text class="sub" x="446" y="158">1. 界面「联网设置」里填的</text>
+  <text class="sub" x="446" y="177">2. 环境变量 DEEPSEEK_API_KEY</text>
+  <text class="sub" x="446" y="196">3. java/config.local.properties（不入库）</text>
+</svg>
