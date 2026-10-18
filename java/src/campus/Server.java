@@ -153,6 +153,7 @@ public final class Server {
     out.put("engine", eng);
 
     out.put("llm", Llm.healthCached());
+    out.put("onlineMode", router.onlineMode());
     json(ex, 200, out);
   }
 
@@ -178,10 +179,17 @@ public final class Server {
     String apiKey = Json.str(req, "apiKey", null);
     List<Object> history = req.get("history") instanceof List ? Json.arr(req.get("history")) : null;
 
+    Router.AskOpts opts = new Router.AskOpts();
+    opts.apiKey = apiKey;
+    opts.providerId = Json.str(req, "provider", null);
+    opts.baseUrl = Json.str(req, "baseUrl", null);
+    opts.model = Json.str(req, "model", null);
+    opts.forceOffline = Json.bool(req, "forceOffline", false);
+
     long t0 = System.currentTimeMillis();
     Map<String, Object> result;
     try {
-      result = router.ask(question, history, apiKey);
+      result = router.ask(question, history, opts);
     } catch (RuntimeException e) {
       // 引擎或大模型出异常也不能让页面白屏，返回一条可读的离线兜底
       System.err.println("[ask] 处理失败：" + e);
@@ -212,8 +220,11 @@ public final class Server {
     String conf = String.valueOf(result.get("confidence"));
     String extra = "";
     if ("online".equals(mode) && result.get("engine") instanceof Map) {
-      Object model = Json.obj(result.get("engine")).get("model");
-      extra = " · " + model;
+      Map<String, Object> meta = Json.obj(result.get("engine"));
+      Object label = meta.get("providerLabel");
+      Object model = meta.get("model");
+      extra = " · " + label + " / " + model;
+      if (Boolean.FALSE.equals(meta.get("kbHit"))) extra += " · 知识库未覆盖";
     }
     String q = question.length() > 26 ? question.substring(0, 26) + "…" : question;
     System.out.println("[ask] \"" + q + "\" → " + conf + " (" + mode + extra + ", " + ms + "ms)");

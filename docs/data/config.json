@@ -29,14 +29,56 @@
     "midNotice": "离线知识库匹配度一般"
   },
   "llm": {
-    "baseUrl": "https://api.deepseek.com",
-    "model": "deepseek-chat",
+    "_note": "在线模式的大模型配置。Java 侧（Llm.java）与浏览器侧（llm-js.js）读同一份文件，两边行为必须等价。providers 按数组顺序作为自动匹配的候选顺序（defaultProvider 优先级最高）。",
+    "defaultProvider": "deepseek",
+    "providers": [
+      {
+        "id": "deepseek",
+        "label": "DeepSeek",
+        "baseUrl": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "modelHints": ["deepseek-chat", "deepseek"]
+      },
+      {
+        "id": "moonshot",
+        "label": "Kimi",
+        "baseUrl": "https://api.moonshot.cn/v1",
+        "model": "moonshot-v1-8k",
+        "modelHints": ["moonshot"]
+      },
+      {
+        "id": "dashscope",
+        "label": "通义千问",
+        "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model": "qwen-plus",
+        "modelHints": ["qwen-plus", "qwen"]
+      },
+      {
+        "id": "openai",
+        "label": "OpenAI 兼容",
+        "baseUrl": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "modelHints": ["gpt-4o-mini", "gpt-4o", "gpt"]
+      },
+      {
+        "id": "custom",
+        "label": "自定义",
+        "baseUrl": "",
+        "model": "",
+        "modelHints": []
+      }
+    ],
     "probePath": "/models",
     "chatPath": "/chat/completions",
     "probeTimeoutMs": 2500,
     "chatTimeoutMs": 30000,
     "historyTurns": 6,
-    "temperature": 0.3
+    "temperature": 0.3,
+    "mode": {
+      "_note": "onlineAsk=always：在线模式下所有问题都交给大模型（不再看置信度）；kbFallbackToModel=true：知识库未覆盖时允许大模型用通用常识作答",
+      "onlineAsk": "always",
+      "kbFallbackToModel": true
+    }
   },
   "server": {
     "preferredPort": 8080

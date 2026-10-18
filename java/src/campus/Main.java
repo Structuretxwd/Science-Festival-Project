@@ -45,14 +45,18 @@ public final class Main {
     // 每次刷新都让它现场探测的话，网络稍慢就会被误判成「没有后端」。
     if (Llm.hasServerKey()) {
       long t0 = System.currentTimeMillis();
-      Llm.Probe p = Llm.refreshProbe(Llm.resolveKey(null));
-      System.out.println("[llm] 服务端已配置密钥 —— 探测：" + p.status
-          + (p.model.isEmpty() ? "" : " · 模型 " + p.model)
-          + (p.detail.isEmpty() ? "" : " · " + p.detail)
-          + " (" + (System.currentTimeMillis() - t0) + "ms)");
+      Llm.Match m = Llm.warmUp(Llm.resolveKey(null));
+      if (m.ok()) {
+        System.out.println("[llm] 服务端已配置密钥 —— 自动匹配到 " + m.provider.label
+            + " · 模型 " + m.model + " (" + (System.currentTimeMillis() - t0) + "ms)");
+      } else {
+        System.out.println("[llm] 服务端已配置密钥，但探测失败 —— " + m.status
+            + (m.detail.isEmpty() ? "" : " · " + m.detail)
+            + " (" + (System.currentTimeMillis() - t0) + "ms)");
+      }
     } else {
       System.out.println("[llm] 未配置服务端密钥 —— 默认离线模式；"
-          + "可在界面右上角「联网设置」里临时填入 Key 启用在线模式。");
+          + "可在界面右上角「联网设置」里填任意一家的 Key，或选好服务商后自动匹配。");
     }
 
     Server server;
@@ -97,8 +101,8 @@ public final class Main {
     System.out.println("   同义词    " + router.engine().synonymPairCount() + " 组替换规则");
     System.out.println("   访问地址  " + server.url());
     System.out.println("  ------------------------------------------------------------");
-    System.out.println("   离线检索永远可用；填了 API Key 且能联网时，");
-    System.out.println("   置信度不足的问题会自动升级给大模型补充作答。");
+    System.out.println("   离线检索永远可用；填了 API Key 后自动匹配服务商并进入在线模式，");
+    System.out.println("   在线模式下答案由大模型基于知识库改写；想只看原文可在界面上开启「强制离线」。");
     System.out.println("   关闭本窗口即停止服务（或按 Ctrl+C）。");
     System.out.println("  ============================================================");
     System.out.println();

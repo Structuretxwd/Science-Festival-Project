@@ -16,45 +16,73 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * DeepSeek 调用封装（兼容一切 OpenAI 风格的 /models + /chat/completions 接口）。
+ * 大模型调用封装（兼容一切 OpenAI 风格的 /models + /chat/completions 接口）。
  *
  * 只用 JDK 自带的 java.net.http.HttpClient，不引入任何第三方 HTTP 库——
  * 这样 java/lib 目录为空也能跑，评委在自己的电脑上 clone 下来直接就能编译。
  *
- * 两件事：
- *   probe() —— 探测「有没有网、Key 是否有效、模型是否可用」，供 /api/health 用；
- *   chat()  —— 一次对话补全，供分级路由在离线检索置信度不足时兜底。
+ * 三件事：
+ *   match()  —— 自动匹配「这把 Key 属于哪家服务商」，给出 baseUrl 与模型名；
+ *   chat()   —— 一次对话补全；
+ *   healthCached() —— 供 /api/health 读取（只读缓存，绝不在请求里发网络请求）。
+ *
+ * 关于自动匹配：Key 前缀（sk-）在 DeepSeek / Kimi / 通义 / OpenAI 之间高度重叠，
+ * 光看前缀判断不出来，所以真正的判据是「拿 Key 去候选服务商的 /models 探一次，
+ * 谁返回 200 就是谁」。按配置顺序串行尝试，第一个成功即锁定并缓存。
+ *
+ * 关于隐私：Key 只发给候选列表里的服务商，且一旦有一家接受就立即停止；
+ * 界面上如果手动选定了服务商，候选就只剩那一家，不会到处散发。
  *
  * 关于超时：probe 的超时必须远小于前端的健康检查超时（app.js 里是 1500ms），
  * 否则前端会把「后端在探测」误判成「没有后端」，白白丢掉 Java 服务这条链路。
- * 因此服务启动时就把探测结果算好并缓存，/api/health 只读缓存、不做网络请求。
+ * 因此服务启动时就把匹配结果算好并缓存，/api/health 只读缓存、不做网络请求。
  */
 public final class Llm {
 
-  /** 探测结果。status 取值与前端约定一致：no_key / unreachable / invalid_key / ok。 */
-  public static final class Probe {
+  /** 一个可用的大模型服务商。 */
+  public static final class Provider {
+    public final String id;
+    public final String label;
+    public final String baseUrl;
+    public final String model;
+    public final List<String> modelHints;
+
+    Provider(String id, String label, String baseUrl, String model, List<String> modelHints) {
+      this.id = id == null ? "" : id;
+      this.label = (label == null || label.isEmpty()) ? this.id : label;
+      this.baseUrl = trimTrailingSlash(baseUrl);
+      this.model = model == null ? "" : model;
+      this.modelHints = modelHints == null ? new ArrayList<>() : modelHints;
+    }
+
+    /** 派生出一个只改地址/模型名的新实例（custom 服务商走这条路）。 */
+    Provider with(String newBase, String newModel) {
+      String b = (newBase == null || newBase.trim().isEmpty()) ? baseUrl : newBase.trim();
+      String m = (newModel == null || newModel.trim().isEmpty()) ? model : newModel.trim();
+      return new Provider(id, label, b, m, modelHints);
+    }
+  }
+
+  /** 匹配结果。status 取值与前端约定一致：ok / invalid_key / unreachable / no_key / no_provider。 */
+  public static final class Match {
     public final String status;
-    public final boolean reachable;
-    public final boolean valid;
+    public final Provider provider;
     public final String model;
     public final String detail;
 
-    Probe(String status, boolean reachable, boolean valid, String model, String detail) {
-      this.status = status;
-      this.reachable = reachable;
-      this.valid = valid;
+    Match(String status, Provider provider, String model, String detail) {
+      this.status = status == null ? "unreachable" : status;
+      this.provider = provider;
       this.model = model == null ? "" : model;
       this.detail = detail == null ? "" : detail;
     }
 
-    public Map<String, Object> toJson() {
-      Map<String, Object> m = new LinkedHashMap<>();
-      m.put("status", status);
-      m.put("reachable", reachable);
-      m.put("valid", valid);
-      m.put("model", model);
-      if (!detail.isEmpty()) m.put("detail", detail);
-      return m;
+    static Match of(String status, Provider provider, String model, String detail) {
+      return new Match(status, provider, model, detail);
+    }
+
+    public boolean ok() {
+      return "ok".equals(status) && provider != null;
     }
   }
 
@@ -72,45 +100,105 @@ public final class Llm {
   }
 
   private static final String LOCAL_PROPS = "config.local.properties";
-  private static final long PROBE_TTL_MS = 60_000L;
+  private static final long MATCH_TTL_MS = 120_000L;
 
-  private static Probe cachedProbe;
-  private static long cachedProbeAt;
-  private static String cachedProbeKey;
+  private static Map<String, Object> llmCfgCache;
+  private static Match cachedMatch;
+  private static long cachedMatchAt;
+  private static String cachedMatchSig;
 
-  private final Map<String, Object> cfg;
-  private final String baseUrl;
-  private final String model;
+  private final Provider provider;
+  private final String apiKey;
   private final String probePath;
   private final String chatPath;
   private final int probeTimeoutMs;
   private final int chatTimeoutMs;
   private final double temperature;
-  private final String apiKey;
   private final HttpClient http;
 
-  public Llm(Map<String, Object> llmConfig, String apiKey) {
-    this.cfg = llmConfig == null ? new LinkedHashMap<>() : llmConfig;
-    this.baseUrl = trimTrailingSlash(Json.str(cfg, "baseUrl", "https://api.deepseek.com"));
-    this.model = Json.str(cfg, "model", "deepseek-chat");
+  private Llm(Provider provider, String apiKey) {
+    Map<String, Object> cfg = llmConfig();
+    this.provider = provider;
+    this.apiKey = apiKey == null ? "" : apiKey.trim();
     this.probePath = Json.str(cfg, "probePath", "/models");
     this.chatPath = Json.str(cfg, "chatPath", "/chat/completions");
     this.probeTimeoutMs = (int) Json.num(cfg, "probeTimeoutMs", 2500);
     this.chatTimeoutMs = (int) Json.num(cfg, "chatTimeoutMs", 30000);
     this.temperature = Json.num(cfg, "temperature", 0.3);
-    this.apiKey = apiKey == null ? "" : apiKey.trim();
     this.http = HttpClient.newBuilder()
         .connectTimeout(Duration.ofMillis(probeTimeoutMs))
         .followRedirects(HttpClient.Redirect.NORMAL)
         .build();
   }
 
-  public String modelName() {
-    return model;
+  public static Llm of(Provider provider, String apiKey) {
+    return new Llm(provider, apiKey);
   }
 
-  public boolean hasKey() {
-    return !apiKey.isEmpty();
+  public String modelName() {
+    return provider.model;
+  }
+
+  public String providerLabel() {
+    return provider.label;
+  }
+
+  public String providerId() {
+    return provider.id;
+  }
+
+  /** 用于界面显示的「联网大模型 · 服务商 · 模型」一行文案。 */
+  public String sourceLabel() {
+    return "联网大模型 · " + provider.label + (provider.model.isEmpty() ? "" : " · " + provider.model);
+  }
+
+  // ------------------------------------------------------------------ 配置
+
+  /** 读取 config.json 的 llm 段（只读一次）。Java 与浏览器两侧读的必须是同一份。 */
+  public static synchronized Map<String, Object> llmConfig() {
+    if (llmCfgCache != null) return llmCfgCache;
+    try {
+      Map<String, Object> root = Data.load("config.json");
+      llmCfgCache = root.get("llm") instanceof Map ? Json.obj(root.get("llm")) : new LinkedHashMap<>();
+    } catch (RuntimeException e) {
+      System.err.println("[llm] 读取 config.json 失败，退化为内置默认配置：" + e.getMessage());
+      llmCfgCache = new LinkedHashMap<>();
+    }
+    return llmCfgCache;
+  }
+
+  public static List<Provider> providers() {
+    List<Provider> out = new ArrayList<>();
+    for (Object o : listOf(Json.arr(llmConfig().get("providers")))) {
+      Map<String, Object> m = Json.obj(o);
+      String id = Json.str(m, "id", "");
+      if (id.isEmpty()) continue;
+      List<String> hints = new ArrayList<>();
+      for (Object h : listOf(Json.arr(m.get("modelHints")))) {
+        if (h != null) hints.add(String.valueOf(h));
+      }
+      out.add(new Provider(id, Json.str(m, "label", id), Json.str(m, "baseUrl", ""),
+          Json.str(m, "model", ""), hints));
+    }
+    return out;
+  }
+
+  public static String defaultProviderId() {
+    return Json.str(llmConfig(), "defaultProvider", "deepseek");
+  }
+
+  /** 在线模式行为开关：always = 所有问题都交给大模型；auto = 仅置信度不足时。 */
+  public static boolean alwaysOnline() {
+    Object mode = llmConfig().get("mode");
+    Map<String, Object> m = mode instanceof Map ? Json.obj(mode) : new LinkedHashMap<>();
+    return "always".equalsIgnoreCase(Json.str(m, "onlineAsk", "always"));
+  }
+
+  /** 知识库未覆盖时是否允许大模型用通用常识作答。 */
+  public static boolean kbFallbackToModel() {
+    Object mode = llmConfig().get("mode");
+    Map<String, Object> m = mode instanceof Map ? Json.obj(mode) : new LinkedHashMap<>();
+    return Json.bool(m, "kbFallbackToModel", true);
   }
 
   // ------------------------------------------------------------------ 密钥解析
@@ -120,13 +208,20 @@ public final class Llm {
    *
    * 为什么界面填的优先级最高：演示时「测试密钥」按钮必须测的就是用户刚填的那把 Key，
    * 如果被环境变量顶掉，用户会看到「填了新的 Key 还是无效」这种无从排查的现象。
-   * 环境变量与本地配置文件则是「零配置自动联网」的便利通道。
    */
   public static String resolveKey(String requestKey) {
     if (requestKey != null && !requestKey.trim().isEmpty()) return requestKey.trim();
-    String env = System.getenv("DEEPSEEK_API_KEY");
-    if (env != null && !env.trim().isEmpty()) return env.trim();
+    String env = firstEnv("CAMPUS_API_KEY", "DEEPSEEK_API_KEY");
+    if (env != null) return env;
     return readLocalKey();
+  }
+
+  private static String firstEnv(String... names) {
+    for (String n : names) {
+      String v = System.getenv(n);
+      if (v != null && !v.trim().isEmpty()) return v.trim();
+    }
+    return null;
   }
 
   /** 从 java/config.local.properties 读取（已加入 .gitignore，不会被提交）。 */
@@ -144,7 +239,8 @@ public final class Llm {
           String k = s.substring(0, eq).trim();
           String v = s.substring(eq + 1).trim();
           if (v.isEmpty()) continue;
-          if (k.equals("deepseek.api.key") || k.equals("api.key") || k.equals("deepseekApiKey")) {
+          if (k.equals("campus.api.key") || k.equals("deepseek.api.key")
+              || k.equals("api.key") || k.equals("deepseekApiKey")) {
             return v;
           }
         }
@@ -158,12 +254,168 @@ public final class Llm {
 
   /** Key 是否来自服务端配置（而非界面临时填），用于 /api/health 的 configured 判定。 */
   public static boolean hasServerKey() {
-    String env = System.getenv("DEEPSEEK_API_KEY");
-    if (env != null && !env.trim().isEmpty()) return true;
-    return readLocalKey() != null;
+    return firstEnv("CAMPUS_API_KEY", "DEEPSEEK_API_KEY") != null || readLocalKey() != null;
   }
 
-  /** 供 /api/health 使用：读缓存的探测结果，绝不在这里发起网络请求。 */
+  // ------------------------------------------------------------------ 自动匹配
+
+  /**
+   * 自动匹配服务商。
+   *
+   * @param key          API Key
+   * @param preferredId  界面上手动选定的服务商 id（可为 null，表示交给自动匹配）
+   * @param customBase   选「自定义」时填的 baseUrl（可为 null）
+   * @param customModel  选「自定义」时填的模型名（可为 null）
+   */
+  public static synchronized Match match(String key, String preferredId,
+                                        String customBase, String customModel) {
+    if (key == null || key.trim().isEmpty()) {
+      return Match.of("no_key", null, "", "未配置密钥");
+    }
+    String k = key.trim();
+    String sig = k.hashCode() + "|" + nz(preferredId) + "|" + nz(customBase) + "|" + nz(customModel);
+    if (cachedMatch != null && sig.equals(cachedMatchSig)
+        && System.currentTimeMillis() - cachedMatchAt < MATCH_TTL_MS) {
+      return cachedMatch;
+    }
+
+    List<Provider> queue = candidateQueue(preferredId, customBase, customModel);
+    if (queue.isEmpty()) {
+      Match m = Match.of("no_provider", null, "", "config.json 里没有可用的服务商配置");
+      remember(m, sig);
+      return m;
+    }
+
+    boolean sawInvalid = false;
+    String lastDetail = "";
+    for (Provider p : queue) {
+      if (p.baseUrl.isEmpty()) continue;
+      Match m = probeOnce(p, k);
+      if (m.ok()) {
+        remember(m, sig);
+        return m;
+      }
+      if ("invalid_key".equals(m.status)) {
+        sawInvalid = true;
+        lastDetail = p.label + " 拒绝了这把 Key（HTTP 401/403）";
+      } else {
+        lastDetail = p.label + "：" + m.detail;
+        // 网络不通就不用再试其它服务商了——它们同样连不上，
+        // 继续试只会让启动白白多等好几个超时。
+        break;
+      }
+    }
+
+    Match result = sawInvalid
+        ? Match.of("invalid_key", null, "", lastDetail.isEmpty() ? "试过的服务商都拒绝了这个密钥" : lastDetail)
+        : Match.of("unreachable", null, "", lastDetail.isEmpty() ? "无法连接到大模型服务" : lastDetail);
+    remember(result, sig);
+    return result;
+  }
+
+  /** 启动时预热：让 /api/health 能立刻给出状态，而不用在请求里现探测。 */
+  public static Match warmUp(String key) {
+    return match(key, null, null, null);
+  }
+
+  private static void remember(Match m, String sig) {
+    cachedMatch = m;
+    cachedMatchAt = System.currentTimeMillis();
+    cachedMatchSig = sig;
+  }
+
+  private static String nz(String s) {
+    return s == null ? "" : s.trim();
+  }
+
+  /** 候选顺序：手动选定 > 默认服务商 > 配置里的其余内置服务商。 */
+  private static List<Provider> candidateQueue(String preferredId, String customBase, String customModel) {
+    List<Provider> all = providers();
+    List<Provider> queue = new ArrayList<>();
+
+    String pref = nz(preferredId);
+    if (!pref.isEmpty()) {
+      Provider p = find(all, pref);
+      if (p != null) queue.add(p.with(customBase, customModel));
+    }
+    if (queue.isEmpty()) {
+      Provider d = find(all, defaultProviderId());
+      if (d == null) d = firstNonCustom(all);
+      if (d != null) queue.add(d);
+    }
+    for (Provider p : all) {
+      // custom 没有固定地址，只能由界面显式选定，不参与自动兜底
+      if ("custom".equals(p.id)) continue;
+      boolean seen = false;
+      for (Provider q : queue) if (q.id.equals(p.id)) { seen = true; break; }
+      if (!seen) queue.add(p);
+    }
+    return queue;
+  }
+
+  private static Provider find(List<Provider> all, String id) {
+    for (Provider p : all) if (p.id.equals(id)) return p;
+    return null;
+  }
+
+  private static Provider firstNonCustom(List<Provider> all) {
+    for (Provider p : all) if (!"custom".equals(p.id)) return p;
+    return null;
+  }
+
+  /** 拿 Key 去一个服务商的 /models 探一次。 */
+  private static Match probeOnce(Provider p, String key) {
+    Llm llm = new Llm(p, key);
+    try {
+      HttpRequest req = HttpRequest.newBuilder(URI.create(p.baseUrl + llm.probePath))
+          .timeout(Duration.ofMillis(llm.probeTimeoutMs))
+          .header("Authorization", "Bearer " + key)
+          .header("Accept", "application/json")
+          .GET()
+          .build();
+      HttpResponse<String> res = llm.http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+      int code = res.statusCode();
+      if (code >= 200 && code < 300) {
+        String model = pickModel(res.body(), p);
+        return Match.of("ok", p.with(null, model), model, "");
+      }
+      if (code == 401 || code == 402 || code == 403) {
+        return Match.of("invalid_key", null, "", "HTTP " + code + " " + brief(res.body()));
+      }
+      return Match.of("unreachable", null, "", "HTTP " + code + " " + brief(res.body()));
+    } catch (IOException e) {
+      return Match.of("unreachable", null, "", e.getClass().getSimpleName() + ": " + e.getMessage());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return Match.of("unreachable", null, "", "探测被中断");
+    } catch (RuntimeException e) {
+      return Match.of("unreachable", null, "", String.valueOf(e.getMessage()));
+    }
+  }
+
+  /** /models 返回里按 modelHints 挑一个模型名，挑不到就用配置里的默认模型。 */
+  private static String pickModel(String body, Provider p) {
+    try {
+      Map<String, Object> m = Json.obj(Json.parse(body));
+      List<Object> data = Json.arr(m.get("data"));
+      if (data != null && !data.isEmpty()) {
+        List<String> ids = new ArrayList<>();
+        for (Object o : data) {
+          String id = Json.str(Json.obj(o), "id", "");
+          if (!id.isEmpty()) ids.add(id);
+        }
+        for (String hint : p.modelHints) {
+          for (String id : ids) if (id.contains(hint)) return id;
+        }
+        if (!ids.isEmpty()) return ids.get(0);
+      }
+    } catch (RuntimeException ignored) {
+      // 解析失败无所谓，模型名只是给界面显示与调用用
+    }
+    return p.model;
+  }
+
+  /** 供 /api/health 使用：读缓存的匹配结果，绝不在这里发起网络请求。 */
   public static synchronized Map<String, Object> healthCached() {
     Map<String, Object> out = new LinkedHashMap<>();
     String key = resolveKey(null);
@@ -173,104 +425,37 @@ public final class Llm {
       out.put("reachable", false);
       out.put("valid", false);
       out.put("model", "");
+      out.put("provider", "");
+      out.put("providerLabel", "");
       return out;
     }
-    Probe p = cachedProbe;
-    if (p == null) {
-      // 启动时探测过才有缓存；理论上 Main 会先探测，这里只是兜底
-      p = new Probe("no_key", false, false, "", "");
-    }
-    out.putAll(p.toJson());
+    Match m = cachedMatch != null ? cachedMatch : Match.of("unreachable", null, "", "尚未探测");
+    out.put("status", m.status);
     out.put("configured", true);
+    out.put("reachable", m.ok() || "invalid_key".equals(m.status));
+    out.put("valid", m.ok());
+    out.put("model", m.model);
+    out.put("provider", m.provider == null ? "" : m.provider.id);
+    out.put("providerLabel", m.provider == null ? "" : m.provider.label);
+    if (!m.detail.isEmpty()) out.put("detail", m.detail);
     return out;
   }
 
-  /** 启动时或缓存过期时调用，真正发一次网络请求。 */
-  public static synchronized Probe refreshProbe(String key) {
-    if (key == null || key.trim().isEmpty()) {
-      cachedProbe = new Probe("no_key", false, false, "", "未配置密钥");
-      cachedProbeAt = System.currentTimeMillis();
-      cachedProbeKey = null;
-      return cachedProbe;
-    }
-    boolean fresh = cachedProbe != null
-        && key.equals(cachedProbeKey)
-        && System.currentTimeMillis() - cachedProbeAt < PROBE_TTL_MS;
-    if (fresh) return cachedProbe;
-
-    Map<String, Object> root = Data.load("config.json");
-    Map<String, Object> llmCfg = root.get("llm") instanceof Map ? Json.obj(root.get("llm")) : null;
-    Probe p = new Llm(llmCfg, key).probe();
-    cachedProbe = p;
-    cachedProbeAt = System.currentTimeMillis();
-    cachedProbeKey = key;
-    return p;
-  }
-
-  // ------------------------------------------------------------------ 调用
-
-  /** 探测网络连通性与 Key 有效性。 */
-  public Probe probe() {
-    if (apiKey.isEmpty()) return new Probe("no_key", false, false, "", "未配置密钥");
-    try {
-      HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl + probePath))
-          .timeout(Duration.ofMillis(probeTimeoutMs))
-          .header("Authorization", "Bearer " + apiKey)
-          .header("Accept", "application/json")
-          .GET()
-          .build();
-      HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-      int code = res.statusCode();
-      if (code >= 200 && code < 300) {
-        return new Probe("ok", true, true, modelFromModels(res.body()), "");
-      }
-      if (code == 401 || code == 402 || code == 403) {
-        return new Probe("invalid_key", true, false, "", "HTTP " + code + " " + brief(res.body()));
-      }
-      return new Probe("unreachable", false, false, "", "HTTP " + code + " " + brief(res.body()));
-    } catch (IOException e) {
-      return new Probe("unreachable", false, false, "", e.getClass().getSimpleName() + ": " + e.getMessage());
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      return new Probe("unreachable", false, false, "", "探测被中断");
-    } catch (RuntimeException e) {
-      return new Probe("unreachable", false, false, "", e.getMessage());
-    }
-  }
-
-  /** /models 返回里挑一个模型名，挑不到就退回配置里的默认模型。 */
-  private String modelFromModels(String body) {
-    try {
-      Map<String, Object> m = Json.obj(Json.parse(body));
-      List<Object> data = Json.arr(m.get("data"));
-      if (data != null) {
-        for (Object o : data) {
-          String id = Json.str(Json.obj(o), "id", "");
-          if (id.contains(model)) return id;
-        }
-        if (!data.isEmpty()) {
-          String id = Json.str(Json.obj(data.get(0)), "id", "");
-          if (!id.isEmpty()) return id;
-        }
-      }
-    } catch (RuntimeException ignored) {
-      // 解析失败无所谓，模型名只是给界面显示用的
-    }
-    return model;
-  }
+  // ------------------------------------------------------------------ 对话
 
   /** 一次对话补全。 */
   public Chat chat(List<Map<String, Object>> messages) {
     if (apiKey.isEmpty()) return new Chat(false, null, "未配置密钥");
+    if (provider.baseUrl.isEmpty()) return new Chat(false, null, "没有可用的服务商地址");
 
     Map<String, Object> bodyMap = new LinkedHashMap<>();
-    bodyMap.put("model", model);
+    bodyMap.put("model", provider.model);
     bodyMap.put("messages", messages);
     bodyMap.put("temperature", temperature);
     bodyMap.put("stream", Boolean.FALSE);
 
     try {
-      HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl + chatPath))
+      HttpRequest req = HttpRequest.newBuilder(URI.create(provider.baseUrl + chatPath))
           .timeout(Duration.ofMillis(chatTimeoutMs))
           .header("Authorization", "Bearer " + apiKey)
           .header("Content-Type", "application/json; charset=utf-8")
@@ -347,6 +532,10 @@ public final class Llm {
     return t;
   }
 
+  private static List<Object> listOf(List<Object> l) {
+    return l == null ? new ArrayList<>() : l;
+  }
+
   /** 由「配置 + 历史 + 知识库上下文」组装给模型的 messages。 */
   public static List<Map<String, Object>> buildMessages(String systemPrompt, List<Object> history,
                                                         int historyTurns, String userQuestion,
@@ -357,26 +546,12 @@ public final class Llm {
     sys.put("content", systemPrompt);
     messages.add(sys);
 
-    if (history != null) {
-      // 有些调用方会把「当前问题」也放进 history（例如界面上的「升级到联网」按钮，
-      // 它把提问后的完整对话一起发过来），那样模型会看到同一个问题问两遍。
-      // 这里把与本次提问重复的末尾那条去掉，当前问题由下面的 user 消息统一承载。
-      int end = history.size();
-      if (end > 0 && history.get(end - 1) instanceof Map) {
-        Map<String, Object> last = Json.obj(history.get(end - 1));
-        if ("user".equals(Json.str(last, "role", ""))
-            && userQuestion != null
-            && userQuestion.trim().equals(Json.str(last, "content", "").trim())) {
-          end--;
-        }
-      }
-
-      int from = Math.max(0, end - historyTurns);
-      for (int i = from; i < end; i++) {
-        if (!(history.get(i) instanceof Map)) continue;
-        Map<String, Object> raw = Json.obj(history.get(i));
-        String role = Json.str(raw, "role", "");
-        String content = Json.str(raw, "content", "");
+    if (history != null && historyTurns > 0) {
+      int start = Math.max(0, history.size() - historyTurns * 2);
+      for (int i = start; i < history.size(); i++) {
+        Map<String, Object> h = Json.obj(history.get(i));
+        String role = Json.str(h, "role", "");
+        String content = Json.str(h, "content", "");
         if (content.isEmpty()) continue;
         if (!"user".equals(role) && !"assistant".equals(role)) continue;
         Map<String, Object> m = new LinkedHashMap<>();
@@ -388,12 +563,9 @@ public final class Llm {
 
     Map<String, Object> user = new LinkedHashMap<>();
     user.put("role", "user");
-    if (kbContext != null && !kbContext.isEmpty()) {
-      user.put("content", "【知识库参考（来自学校官方信息，优先采用）】\n" + kbContext
-          + "\n\n【我的问题】\n" + userQuestion);
-    } else {
-      user.put("content", userQuestion);
-    }
+    user.put("content", kbContext == null || kbContext.isEmpty()
+        ? userQuestion
+        : userQuestion + "\n\n【知识库参考】\n" + kbContext);
     messages.add(user);
     return messages;
   }

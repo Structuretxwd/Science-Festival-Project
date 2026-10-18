@@ -174,6 +174,36 @@
       仅当你点击「测试连接」或发起联网提问时，它才会随该次请求发送给你配置的大模型服务。
     </p>
 
+    <label class="field" for="providerSel">
+      <span class="field-label">服务商</span>
+      <span class="field-input">
+        <select id="providerSel">
+          <option value="">自动匹配</option>
+        </select>
+      </span>
+    </label>
+    <p class="field-hint">
+      留「自动匹配」时，系统会用你填的 Key 依次探测各服务商，<strong>第一个返回成功的即为当前服务商</strong>；
+      也可以手动指定，这样 Key 只会发给这一家。
+    </p>
+
+    <div class="field-row" id="customRow" hidden>
+      <label class="field" for="customBase">
+        <span class="field-label">服务地址 baseUrl</span>
+        <span class="field-input">
+          <input id="customBase" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="https://example.com/v1">
+        </span>
+      </label>
+      <label class="field" for="customModel">
+        <span class="field-label">模型名</span>
+        <span class="field-input">
+          <input id="customModel" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="例如 qwen-plus">
+        </span>
+      </label>
+    </div>
+
     <div class="panel-actions">
       <button class="btn btn-primary" id="keyTest" type="button">测试连接</button>
       <button class="btn btn-ghost" id="keyClear" type="button">清除</button>
@@ -181,11 +211,20 @@
 
     <div class="probe" id="probeResult" hidden></div>
 
+    <label class="switch" for="forceOffline">
+      <input type="checkbox" id="forceOffline">
+      <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+      <span class="switch-text">
+        <b>强制离线</b>
+        <small>打开后即使填了 Key 也不联网，用于现场演示「拔网线也能答」。</small>
+      </span>
+    </label>
+
     <div class="panel-note">
       <p class="note-title">关于两种模式</p>
       <ul class="note-list">
         <li><b>离线模式</b>：检索本地知识库作答，速度快、完全离线，答案带出处与核实标记。</li>
-        <li><b>在线模式</b>：把知识库检索结果作为上下文交给大模型润色/补充，适合知识库没有覆盖的问题。</li>
+        <li><b>在线模式</b>：把知识库检索结果作为上下文交给大模型改写；知识库没收录的问题，则由大模型用通用知识作答并标明来源。</li>
       </ul>
       <p class="note-foot">未通过的密钥不会启用在线模式，徽章会保持灰色或橙色。</p>
     </div>

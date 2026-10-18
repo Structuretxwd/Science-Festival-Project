@@ -17,6 +17,11 @@
      ------------------------------------------------------------------ */
   var LS_THEME = 'campus.theme';
   var LS_KEY = 'campus.apiKey';
+  var LS_PROVIDER = 'campus.provider';      // 上次自动匹配成功的服务商
+  var LS_PROVIDER_SEL = 'campus.providerSel'; // 面板里手动选定的服务商（'' = 自动匹配）
+  var LS_FORCE_OFFLINE = 'campus.forceOffline';
+  var LS_CUSTOM_BASE = 'campus.customBase';   // 自定义服务商地址
+  var LS_CUSTOM_MODEL = 'campus.customModel'; // 自定义模型名
   var HEALTH_TIMEOUT = 1500;
   var HISTORY_LIMIT = 12; // 送给模型的历史消息条数（约 6 轮）
 
@@ -79,7 +84,12 @@
     keyReveal: $('#keyReveal'),
     keyTest: $('#keyTest'),
     keyClear: $('#keyClear'),
-    probe: $('#probeResult')
+    probe: $('#probeResult'),
+    providerSel: $('#providerSel'),
+    customRow: $('#customRow'),
+    customBase: $('#customBase'),
+    customModel: $('#customModel'),
+    forceOffline: $('#forceOffline')
   };
 
   /* ------------------------------------------------------------------
@@ -95,6 +105,11 @@
     engineError: null,      // 'missing' | 'error' | null
     llmStatus: 'no_key',    // no_key | unreachable | invalid_key | ok
     llmModel: '',
+    provider: null,         // 匹配到的服务商 {id,label,baseUrl,model}
+    providerSel: '',        // 面板里手动选定的服务商 id（'' = 自动匹配）
+    forceOffline: false,    // 强制离线开关
+    onlineMode: 'always',   // always = 在线模式下所有问题都过大模型
+    kbFallback: true,       // 知识库未覆盖时是否允许大模型用通用常识作答
     apiKey: '',
     busy: false,
     history: [],            // [{role, content}]
@@ -200,10 +215,27 @@
   /* ------------------------------------------------------------------
      模式徽章
      ------------------------------------------------------------------ */
+  /* 服务商显示名：自动匹配到谁就显示谁 */
   function modelLabel() {
-    var m = state.llmModel || '';
-    if (/deepseek/i.test(m)) return 'DeepSeek';
-    return m || '联网大模型';
+    if (state.provider && state.provider.label) return state.provider.label;
+    if (state.llmModel) return state.llmModel;
+    return '联网大模型';
+  }
+
+  /* 「在线模式」是否真的可用：匹配成功 + 没开强制离线 */
+  function onlineReady() {
+    return state.llmStatus === 'ok' && !!state.provider && !state.forceOffline;
+  }
+
+  /* 面板里选的服务商 + 自定义地址，一起塞给匹配逻辑 */
+  function providerOpts() {
+    var o = {};
+    if (state.providerSel) o.provider = state.providerSel;
+    if (state.providerSel === 'custom') {
+      o.baseUrl = el.customBase.value.trim();
+      o.model = el.customModel.value.trim();
+    }
+    return o;
   }
 
   var BADGE_TEXT = {
@@ -214,39 +246,52 @@
     probing: '正在检测密钥…'
   };
 
-  function setLlmStatus(status, model) {
+  function setLlmStatus(status, model, provider) {
     if (typeof model === 'string' && model) state.llmModel = model;
+    if (provider) state.provider = provider;
     state.llmStatus = status;
 
-    el.badge.setAttribute('data-status', status);
+    // 强制离线时徽章按「离线」配色显示，避免误导
+    el.badge.setAttribute('data-status', state.forceOffline ? 'no_key' : status);
     var text = BADGE_TEXT[status] || BADGE_TEXT.no_key;
     if (status === 'ok') text = '在线模式 · ' + modelLabel();
+    if (state.forceOffline && status === 'ok') text = '强制离线模式';
     el.badgeText.textContent = text;
 
     syncPanelStatus();
     syncComposerHint();
-    el.sendBtn.title = status === 'ok' ? '发送（在线模式）' : '发送（离线模式）';
+    el.sendBtn.title = onlineReady() ? '发送（在线模式）' : '发送（离线模式）';
   }
 
   function syncComposerHint() {
     var map = {
-      ok: '当前：在线模式，答案由大模型补充润色',
+      ok: '当前：在线模式，答案由大模型基于知识库改写',
       invalid_key: '当前：离线模式（密钥无效）',
       unreachable: '当前：离线模式（网络不可用）',
       no_key: '当前：离线模式，检索本地知识库'
     };
-    el.hintMode.textContent = map[state.llmStatus] || map.no_key;
+    el.hintMode.textContent = state.forceOffline
+      ? '当前：强制离线模式，答案完全来自本地知识库'
+      : (map[state.llmStatus] || map.no_key);
   }
 
   function syncPanelStatus() {
     var map = {
-      ok: ['ok', '在线模式已就绪 · ' + modelLabel()],
+      ok: ['ok', '在线模式已就绪 · ' + modelLabel()
+        + (state.llmModel ? ' / ' + state.llmModel : '')],
       invalid_key: ['invalid_key', '密钥无效：请检查 Key 是否正确或已过期'],
       unreachable: ['unreachable', '网络不可用：无法连接大模型服务'],
       no_key: ['no_key', '离线模式：未配置问答密钥'],
       probing: ['probing', '正在检测密钥…']
     };
-    var v = map[state.llmStatus] || map.no_key;
+    var v;
+    if (state.forceOffline) {
+      v = ['no_key', state.llmStatus === 'ok'
+        ? '强制离线模式已开启 · 已匹配 ' + modelLabel() + '，关闭开关后立即生效'
+        : '强制离线模式已开启，答案完全来自本地知识库'];
+    } else {
+      v = map[state.llmStatus] || map.no_key;
+    }
     el.panelStatus.setAttribute('data-status', v[0]);
     el.panelStatus.innerHTML = '<span class="dot"></span><span>' + esc(v[1]) + '</span>';
   }
@@ -354,9 +399,19 @@
   /* ------------------------------------------------------------------
      提问路由
      ------------------------------------------------------------------ */
-  function askBackend(question, history, apiKey) {
+  /**
+   * 走 Java 后端。服务商、自定义地址、强制离线开关都随请求一起带过去，
+   * 这样前端和后端对「在线模式」的理解永远一致。
+   */
+  function askBackend(question, history) {
     var body = { question: question, history: history };
-    if (apiKey) body.apiKey = apiKey;
+    if (state.apiKey) body.apiKey = state.apiKey;
+    var p = providerOpts();
+    if (p.provider) body.provider = p.provider;
+    if (p.baseUrl) body.baseUrl = p.baseUrl;
+    if (p.model) body.model = p.model;
+    if (state.forceOffline) body.forceOffline = true;
+
     return fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -380,11 +435,11 @@
   }
 
   function route(question, history) {
-    // A) 有后端
+    // A) 有后端：联不联网由后端按同一份配置决定
     if (state.backend) {
-      return askBackend(question, history, state.apiKey);
+      return askBackend(question, history);
     }
-    // B) 无后端 → 本地引擎
+    // B) 无后端 → 本地引擎检索，在线模式下再把结果交给大模型改写
     return ensureEngine().then(function (engine) {
       if (!engine) {
         var e = new Error('ENGINE_NOT_READY');
@@ -392,7 +447,72 @@
         throw e;
       }
       return engine.ask(question);
+    }).then(function (offline) {
+      return onlinePass(question, history, offline);
     });
+  }
+
+  /**
+   * 无后端时的「在线模式」：先本地检索，再把知识库结果交给大模型改写。
+   *
+   * 与 java/src/campus/Router.java 的 ask() 保持同一套判断：
+   *   没开在线模式 → 原样返回离线答案
+   *   auto 口径且高置信 → 原样返回离线答案
+   *   知识库没覆盖且不允许通用常识 → 原样返回离线答案
+   *   否则交给大模型；联网失败就回退离线答案并在 notice 里说明原因
+   */
+  function onlinePass(question, history, offline) {
+    if (!onlineReady()) return offline;
+    if (state.onlineMode !== 'always' && offline.confidence === 'high') return offline;
+
+    var hasKb = !!offline.entryId;
+    if (!hasKb && !state.kbFallback) return offline;
+    if (!window.CampusLlm || typeof window.CampusLlm.chat !== 'function') return offline;
+
+    return window.CampusLlm.chat({
+      apiKey: state.apiKey,
+      history: history,
+      question: question,
+      kbContext: hasKb ? buildKbContext(offline) : '',
+      provider: state.provider.id,
+      baseUrl: state.provider.baseUrl,
+      model: state.provider.model
+    }).then(function (r) {
+      if (!r || !r.ok) {
+        offline.notice = mergeNotice(offline.notice,
+          '联网大模型暂时不可用（' + ((r && r.error) || '未知错误') + '），已回退为离线答案。');
+        return offline;
+      }
+      return {
+        mode: 'online',
+        confidence: 'high',
+        answer: r.content,
+        entryId: offline.entryId || null,
+        entryQuestion: offline.entryQuestion || null,
+        category: offline.category || null,
+        source: '联网大模型 · ' + (r.providerLabel || state.provider.label)
+          + (r.model || state.provider.model ? ' · ' + (r.model || state.provider.model) : ''),
+        verified: offline.verified == null ? null : offline.verified,
+        candidates: offline.candidates || [],
+        matchedTerms: offline.matchedTerms || [],
+        notice: hasKb
+          ? '本回答由联网大模型改写自知识库原文，事实以知识库为准。'
+          : '知识库没有收录这个问题，以下内容由联网大模型用通用知识作答，仅供参考。',
+        engine: {
+          impl: 'js',
+          model: r.model || state.provider.model,
+          provider: r.provider || state.provider.id,
+          providerLabel: r.providerLabel || state.provider.label,
+          retrievalConfidence: offline.confidence,
+          kbHit: hasKb
+        }
+      };
+    });
+  }
+
+  function mergeNotice(existing, extra) {
+    var base = typeof existing === 'string' ? existing.trim() : '';
+    return base ? base + ' ' + extra : extra;
   }
 
   /* ------------------------------------------------------------------
@@ -764,9 +884,28 @@
     }).join('\n\n');
   }
 
+  /* 组装送给模型的「之前几轮」，剔除末尾那条本次提问 */
+  function lastHistory(question) {
+    var h = state.history.slice();
+    if (h.length && h[h.length - 1].role === 'user' && h[h.length - 1].content === question) h.pop();
+    return h.slice(-HISTORY_LIMIT);
+  }
+
+  function llmOpts() {
+    return {
+      provider: state.provider ? state.provider.id : '',
+      baseUrl: state.provider ? state.provider.baseUrl : '',
+      model: state.provider ? state.provider.model : ''
+    };
+  }
+
   function upgradeToOnline(question, upgradeNode) {
     if (!state.apiKey) {
       openPanel('填写 API Key 后即可启用联网大模型。');
+      return;
+    }
+    if (state.forceOffline) {
+      openPanel('「强制离线」开关正开着，先关掉它再试。');
       return;
     }
     if (state.busy) return;
@@ -782,12 +921,12 @@
     showLoading(holder);
     scrollBottom(true);
 
-    var history = state.history.slice(-HISTORY_LIMIT);
+    var history = lastHistory(question);
 
     var run;
     if (state.backend) {
-      // 有后端：把 Key 一起发过去，由后端调用大模型
-      run = askBackend(question, history, state.apiKey);
+      // 有后端：把 Key 与服务商一起发过去，由后端调用大模型
+      run = askBackend(question, history);
     } else if (window.CampusLlm && typeof window.CampusLlm.chat === 'function') {
       // 无后端：浏览器直连
       var prior = state.lastResult;
@@ -799,11 +938,15 @@
           });
 
       run = ensure.then(function (ctxResult) {
-        var messages = history.concat([{ role: 'user', content: question }]);
+        var hasKb = !!ctxResult.entryId;
         return window.CampusLlm.chat({
           apiKey: state.apiKey,
-          messages: messages,
-          kbContext: buildKbContext(ctxResult)
+          history: history,
+          question: question,
+          kbContext: hasKb ? buildKbContext(ctxResult) : '',
+          provider: llmOpts().provider,
+          baseUrl: llmOpts().baseUrl,
+          model: llmOpts().model
         }).then(function (r) {
           if (!r || !r.ok) {
             var e = new Error((r && r.error) || '大模型调用失败');
@@ -817,11 +960,14 @@
             entryId: ctxResult.entryId || null,
             entryQuestion: ctxResult.entryQuestion || null,
             category: ctxResult.category || null,
-            source: '联网大模型 · ' + modelLabel(),
-            verified: null,
-            candidates: [],
+            source: '联网大模型 · ' + (r.providerLabel || modelLabel())
+              + (r.model ? ' · ' + r.model : ''),
+            verified: ctxResult.verified == null ? null : ctxResult.verified,
+            candidates: ctxResult.candidates || [],
             matchedTerms: ctxResult.matchedTerms || [],
-            notice: null
+            notice: hasKb
+              ? '本回答由联网大模型改写自知识库原文，事实以知识库为准。'
+              : '知识库没有收录这个问题，以下内容由联网大模型用通用知识作答，仅供参考。'
           };
         });
       });
@@ -847,27 +993,22 @@
       });
   }
 
-  /* 测试密钥：优先用 CampusLlm.probe，其次用后端 /api/ask 实测 */
+  /* 测试密钥：优先在浏览器直连做服务商自动匹配，取不到再退回后端实测 */
   function testKey(key) {
-    if (window.CampusLlm && typeof window.CampusLlm.probe === 'function') {
-      return window.CampusLlm.probe(key).then(function (r) {
-        return {
-          status: (r && r.status) || 'unreachable',
-          reachable: !!(r && r.reachable),
-          valid: !!(r && r.valid),
-          model: (r && r.model) || '',
-          via: 'llm'
-        };
-      });
+    if (window.CampusLlm && typeof window.CampusLlm.match === 'function') {
+      return window.CampusLlm.match(key, providerOpts());
     }
     if (state.backend) {
-      return askBackend('连接测试', [], key).then(function (r) {
+      return askBackend('连接测试', []).then(function (r) {
         var online = r && r.mode === 'online';
+        var meta = (r && r.engine) || {};
         return {
           status: online ? 'ok' : 'invalid_key',
           reachable: true,
           valid: online,
-          model: state.llmModel || '',
+          model: meta.model || state.llmModel || '',
+          provider: meta.provider || '',
+          providerLabel: meta.providerLabel || '',
           via: 'backend',
           sample: r
         };
@@ -878,10 +1019,12 @@
 
   function probeMessage(r) {
     if (r.status === 'ok') {
-      return { cls: 'ok', html: '<b>连接成功</b> · 模型 <code>' + esc(r.model || modelLabel()) + '</code>，已切换为在线模式。' };
+      return { cls: 'ok', html: '<b>匹配成功</b> · 服务商 <code>' + esc(r.providerLabel || modelLabel())
+        + '</code>，模型 <code>' + esc(r.model || '默认') + '</code>，已切换为在线模式。' };
     }
     if (r.status === 'invalid_key') {
-      return { cls: 'bad', html: '<b>密钥无效</b> · 请检查 Key 是否填写正确、是否已过期或余额不足。' };
+      return { cls: 'bad', html: '<b>密钥无效</b> · 没有服务商接受这把 Key。请检查是否填错、已过期或余额不足；'
+        + '也可以在上面的「服务商」里手动指定后再试。' };
     }
     if (r.status === 'unreachable') {
       return { cls: 'bad', html: '<b>网络不可用</b> · 无法连接到大模型服务，请检查网络后重试。' };
@@ -905,11 +1048,15 @@
     setLlmStatus('probing');
     el.probe.hidden = false;
     el.probe.className = 'probe';
-    el.probe.textContent = '正在连接大模型服务…';
+    el.probe.textContent = '正在匹配服务商…';
     el.keyTest.disabled = true;
 
     testKey(key).then(function (r) {
-      setLlmStatus(r.status, r.model);
+      var provider = r && r.provider
+        ? { id: r.provider, label: r.providerLabel || r.provider, baseUrl: r.baseUrl || '', model: r.model || '' }
+        : null;
+      if (provider) persistProvider(provider);
+      setLlmStatus(r.status, r.model, provider);
       var m = probeMessage(r);
       el.probe.className = 'probe ' + m.cls;
       el.probe.innerHTML = m.html;
@@ -931,6 +1078,7 @@
     el.panel.classList.add('open');
     el.scrim.classList.add('open');
     el.panel.setAttribute('aria-hidden', 'false');
+    syncProviderUI();
     syncPanelStatus();
     if (note) {
       el.probe.hidden = false;
@@ -951,6 +1099,61 @@
       if (key) localStorage.setItem(LS_KEY, key);
       else localStorage.removeItem(LS_KEY);
     } catch (e) { /* ignore */ }
+  }
+
+  function persistForceOffline(on) {
+    try { localStorage.setItem(LS_FORCE_OFFLINE, on ? '1' : '0'); } catch (e) { /* ignore */ }
+  }
+
+  function persistProviderSel(id) {
+    try {
+      if (id) localStorage.setItem(LS_PROVIDER_SEL, id);
+      else localStorage.removeItem(LS_PROVIDER_SEL);
+    } catch (e) { /* ignore */ }
+  }
+
+  /* 把匹配结果（服务商 id/显示名/地址/模型）统一成界面用的结构 */
+  function providerOf(r) {
+    if (!r || !r.provider) return null;
+    return {
+      id: r.provider,
+      label: r.providerLabel || r.provider,
+      baseUrl: r.baseUrl || '',
+      model: r.model || ''
+    };
+  }
+
+  /* 服务商下拉：选项来自 data/config.json，不在界面里硬编码服务商清单 */
+  function fillProviderOptions() {
+    if (!window.CampusLlm || typeof window.CampusLlm.providers !== 'function') return;
+    window.CampusLlm.providers().then(function (list) {
+      if (!list || !list.length) return;
+      var html = '<option value="">自动匹配</option>';
+      list.forEach(function (p) {
+        html += '<option value="' + esc(p.id) + '">' + esc(p.label) + '</option>';
+      });
+      el.providerSel.innerHTML = html;
+      el.providerSel.value = state.providerSel;
+    }).catch(function () { /* 读不到就只留「自动匹配」 */ });
+  }
+
+  function syncProviderUI() {
+    el.providerSel.value = state.providerSel;
+    el.customRow.hidden = state.providerSel !== 'custom';
+    el.forceOffline.checked = state.forceOffline;
+  }
+
+  /* 在线模式的行为开关（always / auto、是否允许通用常识兜底）来自 config.json */
+  function loadModeConfig() {
+    return fetch('data/config.json', { cache: 'no-store' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (c) {
+        var mode = (c && c.llm && c.llm.mode) || {};
+        if (mode.onlineAsk) state.onlineMode = String(mode.onlineAsk) === 'auto' ? 'auto' : 'always';
+        if (mode.kbFallbackToModel === false) state.kbFallback = false;
+        return c;
+      })
+      .catch(function () { return null; });
   }
 
   function autoGrow() {
@@ -1029,10 +1232,35 @@
       persistKey('');
       el.keyInput.type = 'password';
       el.keyReveal.classList.remove('revealed');
-      setLlmStatus('no_key');
+      setLlmStatus('no_key', '', null);
       el.probe.hidden = false;
       el.probe.className = 'probe';
       el.probe.textContent = '已清除本机保存的 API Key，恢复离线模式。';
+    });
+
+    // 服务商：选「自动匹配」交给探测，选具体一家就只发给那一家
+    el.providerSel.addEventListener('change', function () {
+      state.providerSel = el.providerSel.value;
+      persistProviderSel(state.providerSel);
+      syncProviderUI();
+      if (!state.apiKey) { syncPanelStatus(); return; }
+      runProbe();
+    });
+    el.customBase.addEventListener('change', function () {
+      try { localStorage.setItem(LS_CUSTOM_BASE, el.customBase.value.trim()); } catch (e) { /* ignore */ }
+      runProbe();
+    });
+    el.customModel.addEventListener('change', function () {
+      try { localStorage.setItem(LS_CUSTOM_MODEL, el.customModel.value.trim()); } catch (e) { /* ignore */ }
+      runProbe();
+    });
+
+    // 强制离线：不改变 Key 与服务商的匹配结果，只切换「本次是否联网」
+    el.forceOffline.addEventListener('change', function () {
+      state.forceOffline = el.forceOffline.checked;
+      persistForceOffline(state.forceOffline);
+      syncProviderUI();
+      setLlmStatus(state.llmStatus);
     });
 
     // Esc 关闭面板
@@ -1051,25 +1279,36 @@
     syncComposerHint();
     setLlmStatus('no_key');
 
-    try { state.apiKey = localStorage.getItem(LS_KEY) || ''; } catch (e) { state.apiKey = ''; }
+    try {
+      state.apiKey = localStorage.getItem(LS_KEY) || '';
+      state.providerSel = localStorage.getItem(LS_PROVIDER_SEL) || '';
+      state.forceOffline = localStorage.getItem(LS_FORCE_OFFLINE) === '1';
+      el.customBase.value = localStorage.getItem(LS_CUSTOM_BASE) || '';
+      el.customModel.value = localStorage.getItem(LS_CUSTOM_MODEL) || '';
+    } catch (e) { state.apiKey = ''; }
     el.keyInput.value = state.apiKey;
 
-    Promise.all([probeBackend(), loadKb()]).then(function (res) {
+    fillProviderOptions();
+    syncProviderUI();
+
+    Promise.all([probeBackend(), loadKb(), loadModeConfig()]).then(function (res) {
       var health = res[0];
       var kb = res[1];
 
       if (kb) { indexKb(kb); renderMeta(); renderQuickPrompts(); }
 
-      if (health) {
-        state.backend = health;
-        var llm = health.llm || {};
-        setLlmStatus(llm.status || 'no_key', llm.model || '');
-      } else if (state.apiKey && window.CampusLlm && typeof window.CampusLlm.probe === 'function') {
-        // 无后端但有本地 Key：静默探测一次，恢复「在线模式」徽章
+      if (health) state.backend = health;
+
+      if (state.apiKey && window.CampusLlm && typeof window.CampusLlm.match === 'function') {
+        // 本机存了 Key：静默自动匹配一次，让徽章如实反映是否真的处于在线模式
         setLlmStatus('probing');
         testKey(state.apiKey).then(function (r) {
-          setLlmStatus(r.status, r.model);
+          setLlmStatus(r.status, r.model, providerOf(r));
         }).catch(function () { setLlmStatus('unreachable'); });
+      } else if (health) {
+        // 没有本机 Key 时，徽章反映服务端配置的 Key
+        var llm = health.llm || {};
+        setLlmStatus(llm.status || 'no_key', llm.model || '', providerOf(llm));
       } else {
         setLlmStatus('no_key');
       }

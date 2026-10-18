@@ -2,7 +2,12 @@
 
 **不联网也能回答校园问题。** 装好 JDK，双击 `java\run.bat`，一个没有地址栏的窗口就弹出来了，看起来就是个桌面应用。
 
-它是北京景山学校京西实验学校的校园问答小助手：你把问题打进去，它先去本地知识库里找；找到了就直接给你答案，还告诉你答案是从哪来的；找不到就老实说没学到——如果你配了 API Key，它会再把这个问题交给大模型（DeepSeek）接着答。
+它是北京景山学校京西实验学校的校园问答小助手，有两种工作方式：
+
+- **离线模式（默认，不需要任何 Key）** —— 问题打在本地知识库里检索：找到了就直接给答案、并交代出处；找不到就老实说没学到，绝不硬编。
+- **在线模式（填一把 API Key 就自动开启）** —— 默认把每个问题都交给联网大模型作答，同时把本地检索到的知识库原文作为「参考资料」一起送过去，保证答的是这所学校的事实；知识库没收录的话题（比如「今天天气怎么样」），大模型会用通用常识作答，并明确声明「知识库里没有记录」。
+
+填了 Key 不需要你手动选服务商——它会拿这把 Key 去自动探测属于哪家（DeepSeek / Kimi / 通义千问 / OpenAI 兼容 / 自定义），界面上直接显示匹配结果。还配了一个「强制离线」开关，用来现场演示「拔了网线它也照样答」。
 
 ![首屏](screenshots/01-welcome.png)
 
@@ -54,7 +59,7 @@ java\run.bat --no-browser
 
 ### 不想装 Java？用纯网页版
 
-把 `docs/` 目录直接发布到 **GitHub Pages** 就行——前端只有一份，没有后端时页面会自动切换到浏览器里的 JS 引擎，功能完全一致（联网升级也支持，浏览器可以直连 DeepSeek）。
+把 `docs/` 目录直接发布到 **GitHub Pages** 就行——前端只有一份，没有后端时页面会自动切换到浏览器里的 JS 引擎，功能完全一致（在线模式同样可用，浏览器可以直接连大模型服务并自动匹配服务商）。
 
 本地预览：
 
@@ -94,18 +99,18 @@ python -m http.server 8000
 
    ![联网设置面板](screenshots/06-panel.png)
 
-2. **环境变量**：设置 `DEEPSEEK_API_KEY`，服务端启动时自动探测。
+2. **环境变量**：设置 `CAMPUS_API_KEY`（兼容旧名 `DEEPSEEK_API_KEY`），服务端启动时自动匹配服务商。
 3. **本地配置文件**：在 `java/` 下新建 `config.local.properties`：
 
 ```properties
-deepseek.api.key=sk-你的密钥
+campus.api.key=sk-你的密钥
 ```
 
 该文件已在 `.gitignore` 里，不会被提交。
 
 > 优先级：**界面上填的 > 环境变量 > 本地配置文件**。这样「测试连接」按钮测的一定是你刚填的那把 Key，不会被服务端已有的配置顶掉。
 
-配好之后，页面上方徽章会变成绿色「在线模式 · DeepSeek」。这时只有**中/低置信**的问题才会联网——高置信的问题仍然离线直接答。
+配好之后，页面上方徽章会变成绿色「在线模式 · 服务商名」。**默认所有问题都交给联网大模型**，本地检索到的知识库原文会作为参考资料一起送过去（RAG）；知识库没收录的话题，大模型会用通用常识作答并明确声明。想回到纯离线，打开设置面板里的「强制离线」开关即可——Key 和服务商匹配结果都会保留，关掉开关立即恢复在线。
 
 ---
 
@@ -196,8 +201,8 @@ java/
   src/campus/
     Main.java               启动器：起服务 + 开应用窗口
     Server.java             本地 HTTP 服务 + 静态托管 + /api/health + /api/ask
-    Router.java             分级路由：离线优先，缺失才联网
-    Llm.java                DeepSeek 调用与探测
+    Router.java             路由：在线模式一律走大模型，离线模式走检索，未配 Key 自动降级离线
+    Llm.java                多服务商自动匹配（探测 /models）与调用
     Engine.java             离线检索引擎（Java 实现）
     Text.java               归一化 / 同义词 / 分词
     Data.java               数据文件定位与加载
@@ -223,12 +228,16 @@ screenshots/                README 配图与流程图
 ```json
 { "backend": "java", "version": "0.1.0", "school": "北京景山学校京西实验学校",
   "engine": { "impl": "java", "entries": 42, "synonymPairs": 40 },
-  "llm": { "status": "no_key", "configured": false, "model": "" } }
+  "llm": { "status": "no_key", "configured": false, "reachable": false, "valid": false,
+           "model": "", "provider": "", "providerLabel": "" },
+  "onlineMode": "always" }
 ```
 
-`POST /api/ask` —— 请求体 `{ question, history, apiKey? }`，返回统一响应结构（`mode / confidence / answer / entryId / source / verified / candidates / matchedTerms / notice`）。两种链路（后端 API、浏览器本地引擎）返回同样的结构，前端只写一份渲染逻辑。
+`POST /api/ask` —— 请求体 `{ question, history, apiKey?, provider?, baseUrl?, model?, forceOffline? }`，返回统一响应结构（`mode / confidence / answer / entryId / source / verified / candidates / matchedTerms / notice`）。两种链路（后端 API、浏览器本地引擎）返回同样的结构，前端只写一份渲染逻辑。
 
-`llm.status` 取值 `no_key | unreachable | invalid_key | ok`，与徽章四态一一对应。`/api/health` 只读探测缓存（TTL 60 秒），不发网络请求，保证这个接口足够快。
+`provider / baseUrl / model` 是界面上自动匹配或手动指定的服务商信息；`forceOffline` 为 true 时后端忽略联网、一律走离线检索。在线回答的 `engine` 字段会额外带上 `provider / providerLabel / model / kbHit`。
+
+`llm.status` 取值 `no_key | unreachable | invalid_key | ok`，与徽章四态一一对应。`onlineMode` 取自 `config.json` 的 `llm.mode.onlineAsk`（`always` 表示在线模式下所有问题都过大模型）。`/api/health` 只读探测缓存（启动时算好、TTL 60 秒），不发网络请求，保证这个接口足够快。
 
 </details>
 
