@@ -1119,6 +1119,14 @@
     } catch (e) { /* ignore */ }
   }
 
+  /* 记住上次自动匹配成功的服务商，下次打开时先按它显示，避免徽章一时空着 */
+  function persistProvider(provider) {
+    try {
+      if (provider && provider.id) localStorage.setItem(LS_PROVIDER, JSON.stringify(provider));
+      else localStorage.removeItem(LS_PROVIDER);
+    } catch (e) { /* ignore */ }
+  }
+
   /* 把匹配结果（服务商 id/显示名/地址/模型）统一成界面用的结构 */
   function providerOf(r) {
     if (!r || !r.provider) return null;
@@ -1292,6 +1300,10 @@
       state.forceOffline = localStorage.getItem(LS_FORCE_OFFLINE) === '1';
       el.customBase.value = localStorage.getItem(LS_CUSTOM_BASE) || '';
       el.customModel.value = localStorage.getItem(LS_CUSTOM_MODEL) || '';
+      try {
+        var savedProvider = localStorage.getItem(LS_PROVIDER);
+        state.provider = savedProvider ? JSON.parse(savedProvider) : null;
+      } catch (e2) { state.provider = null; }
     } catch (e) { state.apiKey = ''; }
     el.keyInput.value = state.apiKey;
 
