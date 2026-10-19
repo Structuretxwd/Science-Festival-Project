@@ -138,9 +138,9 @@ campus.api.key=sk-你的密钥
 
 ## 数据说明（重要）
 
-`docs/data/kb.json` 目前 **42 条**，分两类，请务必区分：
+`docs/data/kb.json` 目前 **50 条**，分两类，请务必区分：
 
-- **`verified: true`（23 条）** —— 来自学校公开信息，`source` 字段写明具体出处。
+- **`verified: true`（31 条）** —— 来自学校公开信息，`source` 字段写明具体出处。
 - **`verified: false`（19 条）** —— **模拟示例数据**，仅用于测试检索效果。答案带 `【示例数据】` 前缀，联系电话用 `010-XXXX XXXX` 占位，界面上打橙色「模拟示例数据」角标。
 
 **正式提交或上线前，必须把这 19 条替换为校方真实信息。** `meta.integrity_note` 里也写明了这一点。这样做是为了不把测试数据冒充成校方数据。
@@ -192,7 +192,7 @@ docs/                       既是 GitHub Pages 站点，也是 Java 版前端�
     app.js                  界面逻辑（先探测 /api/health，再决定走哪条链路）
     app.css                 样式（含深浅两套主题）
   data/                     ★ Java 与 JS 共享的唯一数据源
-    kb.json                 知识库（42 条）
+    kb.json                 知识库（50 条）
     synonyms.json           同义词表（40 组替换规则）
     config.json             全部算法参数（阈值、权重、提示语、接口地址）
     stopwords.json          停用词表
@@ -227,7 +227,7 @@ screenshots/                README 配图与流程图
 
 ```json
 { "backend": "java", "version": "0.1.0", "school": "北京景山学校京西实验学校",
-  "engine": { "impl": "java", "entries": 42, "synonymPairs": 40 },
+  "engine": { "impl": "java", "entries": 50, "synonymPairs": 40 },
   "llm": { "status": "no_key", "configured": false, "reachable": false, "valid": false,
            "model": "", "provider": "", "providerLabel": "" },
   "onlineMode": "always" }
