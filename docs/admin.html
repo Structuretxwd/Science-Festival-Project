@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>知识库仪表盘 · 校园智能体「小助手」</title>
+  <meta name="description" content="校园智能体「小助手」知识库仪表盘：只读运维台，展示词条分布、来源与数据体检结果。">
+  <!-- 内联 SVG favicon，无任何外部资源 -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='9'%20fill='%234f46e5'/%3E%3Cpath%20d='M16%207%206.5%2011.6%2016%2016.2l9.5-4.6L16%207Z'%20fill='%23fff'/%3E%3Cpath%20d='M10.5%2014v4.1c0%201.9%202.5%203.4%205.5%203.4s5.5-1.5%205.5-3.4V14'%20fill='none'%20stroke='%23fff'%20stroke-width='1.6'%20stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/admin.css">
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ---------- 顶栏 ---------- -->
+  <header class="dash-head">
+    <div class="dash-brand">
+      <span class="dash-logo" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="24" height="24">
+          <path d="M16 7.5 6.8 12l9.2 4.5 9.2-4.5L16 7.5Z" fill="#fff" fill-opacity=".96"/>
+          <path d="M10.6 14.2v4c0 1.9 2.4 3.3 5.4 3.3s5.4-1.4 5.4-3.3v-4" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".96"/>
+          <path d="M25.6 12.2v4.6" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-opacity=".72"/>
+        </svg>
+      </span>
+      <span class="dash-titles">
+        <strong class="dash-name">知识库仪表盘</strong>
+        <span class="dash-sub" id="dashSub">校园智能体「小助手」 · 正在读取知识库…</span>
+      </span>
+    </div>
+
+    <div class="head-actions">
+      <span class="pill pill-test" title="本页展示的是参赛作品的测试数据，含标注为「模拟示例」的占位内容">
+        <span class="dot" aria-hidden="true"></span>测试版本
+      </span>
+      <span class="pill pill-ver num" id="verPill">v—</span>
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="切换深浅主题" title="切换主题">
+        <svg class="ico-sun" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+        </svg>
+        <svg class="ico-moon" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
+        </svg>
+      </button>
+      <a class="linkbtn" href="index.html">
+        返回小助手
+        <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+      </a>
+    </div>
+  </header>
+
+  <!-- ---------- 加载 / 错误提示 ---------- -->
+  <div id="boot" class="panel" style="margin-bottom:26px">
+    <div class="loading-note"><span class="dots"><i></i><i></i><i></i></span>正在读取 data/kb.json …</div>
+  </div>
+  <div id="bootErr" hidden></div>
+
+  <main id="content" hidden>
+
+    <!-- ---------- 概览 KPI ---------- -->
+    <section class="sec">
+      <div class="sec-head">
+        <h2 class="sec-title">知识库概览</h2>
+        <span class="sec-hint" id="ovHint"></span>
+      </div>
+      <div class="kpis" id="kpis"></div>
+    </section>
+
+    <!-- ---------- 数据分布 ---------- -->
+    <section class="sec">
+      <div class="sec-head">
+        <h2 class="sec-title">数据分布</h2>
+        <span class="sec-hint">点击分类条形可筛选下方词条</span>
+      </div>
+      <div class="panels">
+        <div class="panel">
+          <div class="panel-head">
+            <h3 class="panel-title">分类分布</h3>
+            <span class="panel-note" id="catNote"></span>
+          </div>
+          <div class="bars" id="catBars"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h3 class="panel-title">核实状态</h3>
+            <span class="panel-note">已核实 vs 模拟示例</span>
+          </div>
+          <div id="verifiedDonut"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h3 class="panel-title">来源类型</h3>
+            <span class="panel-note">按出处归并</span>
+          </div>
+          <div id="sourceDonut"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 词条总览 ---------- -->
+    <section class="sec">
+      <div class="sec-head">
+        <h2 class="sec-title">词条总览</h2>
+        <span class="sec-hint">点行展开答案与出处</span>
+      </div>
+      <div class="filters">
+        <label class="search">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+          <input id="q" type="search" placeholder="搜索问题 / 关键词 / 条目 id…" aria-label="搜索词条">
+        </label>
+        <button class="fchip is-on" data-ver="all" type="button">全部</button>
+        <button class="fchip" data-ver="true" type="button">已核实</button>
+        <button class="fchip" data-ver="false" type="button">模拟示例</button>
+        <button class="fchip" id="clearFilters" type="button" hidden>清除筛选</button>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table class="kb">
+            <thead>
+              <tr>
+                <th style="width:46%">词条</th>
+                <th style="width:16%">分类</th>
+                <th style="width:14%">核实状态</th>
+                <th style="width:52px" aria-label="展开"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div class="table-foot">
+          <span id="rowCount"></span>
+          <span>来源：<b id="srcCount">—</b> · 全部数据来自本仓库 <code>docs/data/</code></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 数据体检 ---------- -->
+    <section class="sec">
+      <div class="sec-head">
+        <h2 class="sec-title">数据体检</h2>
+        <span class="sec-hint">全部在浏览器内完成，不依赖后端</span>
+      </div>
+      <div class="health-grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h3 class="panel-title">知识库完整性</h3>
+            <span class="panel-note" id="checkNote"></span>
+          </div>
+          <div class="check-list" id="checks"><div class="loading-note"><span class="dots"><i></i><i></i><i></i></span>校验中…</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h3 class="panel-title">离线引擎自检</h3>
+            <span class="panel-note">复用 JS 引擎跑 testcases.json</span>
+          </div>
+          <div class="selftest-head">
+            <div class="gauge">
+              <span class="gauge-num num" id="stPass">—</span>
+              <span class="gauge-label" id="stLabel">等待引擎…</span>
+            </div>
+          </div>
+          <div class="case-list" id="caseList"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ---------- 页脚 ---------- -->
+  <footer class="dash-foot">
+    <span><b>科学节参赛作品</b> · 本页为只读运维视图，仅展示，不写入知识库。</span>
+    <span>知识库版本 <b class="num" id="footVer">—</b> · 最近更新 <b id="footUpd">—</b></span>
+  </footer>
+
+</div>
+
+<noscript><div class="err-box" style="margin:20px">本页需要启用 JavaScript 才能运行。</div></noscript>
+
+<script src="assets/engine-js.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var LS_THEME = 'campus.theme';
+  var $ = function (s) { return document.querySelector(s); };
+  var FILES = ['kb.json', 'config.json', 'testcases.json', 'synonyms.json', 'stopwords.json'];
+
+  var ICON = {
+    check: '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+    chevron: '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
+    tick: '<svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
+    dot: '<svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none"/></svg>'
+  };
+
+  var DATA = { kb: null, config: null, cases: null, synonyms: null, stopwords: null };
+  var view = { q: '', cat: '', ver: 'all' };
+  var selfTest = null;
+
+  /* ------------------------------------------------------------------ 主题 */
+  function effectiveDark() {
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t) return t === 'dark';
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  function initTheme() {
+    try {
+      var saved = localStorage.getItem(LS_THEME);
+      if (saved) document.documentElement.setAttribute('data-theme', saved);
+    } catch (e) { /* 隐私模式下 localStorage 可能不可用 */ }
+    $('#themeBtn').addEventListener('click', function () {
+      var next = effectiveDark() ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem(LS_THEME, next); } catch (e) { /* ignore */ }
+      renderCharts(); // 图表用 CSS 变量取色，主题切换后需重绘
+    });
+  }
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  /* ------------------------------------------------------------------ 工具 */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function fetchJson(url) {
+    return fetch(url, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error(url + ' → HTTP ' + r.status);
+      return r.json();
+    });
+  }
+  function pct(n, total) {
+    if (!total) return '0%';
+    return (n / total * 100).toFixed(n / total * 100 >= 10 ? 0 : 1) + '%';
+  }
+  function sourceKind(s) {
+    s = String(s || '');
+    if (s.indexOf('模拟示例') >= 0) return '模拟示例';
+    if (s.indexOf('微信公众号') >= 0) return '微信公众号';
+    if (/(教委|教育委员会|人民政府|首都之窗|文旅)/.test(s)) return '政府官方';
+    if (s.indexOf('系统条目') >= 0) return '系统内置';
+    return '其他';
+  }
+
+  /* ------------------------------------------------------------------ 启动 */
+  function boot() {
+    initTheme();
+    Promise.all(FILES.map(function (f) { return fetchJson('data/' + f); }))
+      .then(function (arr) {
+        DATA.kb = arr[0]; DATA.config = arr[1]; DATA.cases = arr[2];
+        DATA.synonyms = arr[3]; DATA.stopwords = arr[4];
+        $('#boot').hidden = true;
+        $('#content').hidden = false;
+        renderAll();
+      })
+      .catch(function (err) {
+        $('#boot').hidden = true;
+        var e = $('#bootErr');
+        e.hidden = false;
+        e.innerHTML =
+          '<div class="panel err-box"><b>无法读取知识库数据：</b>' + esc(err.message) +
+          '<br>本页通过相对路径读取 <code>docs/data/*.json</code>。' +
+          '若你是用 <code>file://</code> 直接双击打开，浏览器会拦截本地 fetch，' +
+          '请改用部署后的 GitHub Pages 地址，或在项目根目录启动一个本地静态服务器后再访问 <code>docs/admin.html</code>。</div>';
+      });
+  }
+
+  function renderAll() {
+    var kb = DATA.kb, meta = kb.meta, entries = kb.entries;
+    $('#dashSub').innerHTML = '校园智能体「小助手」 · <b>' + esc(meta.school) + '</b>';
+    $('#verPill').textContent = 'v' + meta.version;
+    $('#footVer').textContent = 'v' + meta.version;
+    $('#footUpd').textContent = meta.updated;
+    $('#ovHint').textContent = '共 ' + entries.length + ' 条词条 · 更新于 ' + meta.updated;
+    $('#srcCount').textContent = (meta.sources || []).length + ' 条来源记录';
+
+    renderKpis();
+    renderCharts();
+    renderTable();
+    runChecks();
+    runSelfTest();
+  }
+
+  /* ------------------------------------------------------------------ KPI */
+  function renderKpis() {
+    var entries = DATA.kb.entries;
+    var verified = entries.filter(function (e) { return e.verified; }).length;
+    var sim = entries.length - verified;
+    var cats = DATA.kb.meta.categories || [];
+    var pairs = 0;
+    (DATA.synonyms.groups || []).forEach(function (g) {
+      (g.variants || []).forEach(function (v) { if (v !== g.canonical) pairs++; });
+    });
+
+    var tiles = [
+      { n: entries.length, label: '词条总数', sub: 'categories 已覆盖 ' + cats.length + ' 类' },
+      { n: verified, label: '已核实条目', cls: 'ok', sub: pct(verified, entries.length) + ' 有校方/官方出处' },
+      { n: sim, label: '模拟示例', cls: 'warn', sub: '占 ' + pct(sim, entries.length) + '，待替换为真实信息' },
+      { n: cats.length, label: '分类', sub: 'meta.categories 声明' },
+      { n: (DATA.kb.meta.sources || []).length, label: '来源记录', sub: 'meta.sources' },
+      { n: pairs, label: '同义词规则', sub: (DATA.synonyms.groups || []).length + ' 组 · ' + pairs + ' 条替换' },
+      { id: 'stKpi', n: '—', label: '引擎自检', cls: 'acc', sub: 'testcases.json 用例' }
+    ];
+
+    $('#kpis').innerHTML = tiles.map(function (t, i) {
+      return '<div class="kpi" style="animation-delay:' + (i * 45) + 'ms">' +
+        '<div class="kpi-num num' + (t.cls ? ' ' + t.cls : '') + '"' + (t.id ? ' id="' + t.id + '"' : '') + '>' + esc(t.n) + '</div>' +
+        '<div class="kpi-label">' + esc(t.label) + '</div>' +
+        '<div class="kpi-sub">' + esc(t.sub) + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  /* ------------------------------------------------------------------ 图表 */
+  function renderCharts() {
+    if (!DATA.kb) return;
+    var entries = DATA.kb.entries;
+
+    // --- 分类分布（横向条形，可点击筛选） ---
+    var counts = {};
+    DATA.kb.meta.categories.forEach(function (c) { counts[c] = 0; });
+    entries.forEach(function (e) { counts[e.category] = (counts[e.category] || 0) + 1; });
+    var rows = Object.keys(counts).map(function (k) { return { key: k, value: counts[k] }; })
+      .sort(function (a, b) { return b.value - a.value; });
+    var max = Math.max.apply(null, rows.map(function (r) { return r.value; }).concat([1]));
+
+    $('#catBars').innerHTML = rows.map(function (r) {
+      return '<button class="bar-row' + (view.cat === r.key ? ' is-active' : '') + '" data-cat="' + esc(r.key) + '" type="button">' +
+        '<span class="bar-label">' + esc(r.key) + '</span>' +
+        '<span class="bar-track"><span class="bar-fill" data-w="' + (r.value / max * 100).toFixed(1) + '"></span></span>' +
+        '<span class="bar-val">' + r.value + '</span>' +
+        '</button>';
+    }).join('');
+    $('#catNote').textContent = '共 ' + rows.length + ' 类，' + entries.length + ' 条';
+    requestAnimationFrame(function () {
+      Array.prototype.forEach.call($('#catBars').querySelectorAll('.bar-fill'), function (el) {
+        el.style.width = el.getAttribute('data-w') + '%';
+      });
+    });
+
+    // --- 核实状态 / 来源类型（环形） ---
+    var verified = entries.filter(function (e) { return e.verified; }).length;
+    $('#verifiedDonut').innerHTML = donutHTML({
+      total: entries.length,
+      centerTop: verified, centerSub: '已核实',
+      segs: [
+        { name: '已核实', value: verified, color: cssVar('--ok') },
+        { name: '模拟示例', value: entries.length - verified, color: cssVar('--warn') }
+      ]
+    });
+
+    var kinds = {};
+    entries.forEach(function (e) { var k = sourceKind(e.source); kinds[k] = (kinds[k] || 0) + 1; });
+    var kindColors = { '微信公众号': cssVar('--accent'), '模拟示例': cssVar('--warn'), '政府官方': cssVar('--cyan'), '系统内置': cssVar('--text-3'), '其他': cssVar('--text-2') };
+    var ksegs = Object.keys(kinds).map(function (k) { return { name: k, value: kinds[k], color: kindColors[k] || cssVar('--text-2') }; })
+      .sort(function (a, b) { return b.value - a.value; });
+    $('#sourceDonut').innerHTML = donutHTML({ total: entries.length, centerTop: ksegs.length, centerSub: '类来源', segs: ksegs });
+  }
+
+  function donutHTML(o) {
+    var total = o.total || 1;
+    var size = 118, sw = 13, r = (size - sw) / 2 - 1, cx = size / 2, cy = size / 2;
+    var c = 2 * Math.PI * r;
+    var acc = 0;
+    var arcs = o.segs.map(function (s) {
+      var frac = s.value / total;
+      var len = c * frac;
+      var off = -c * acc;
+      acc += frac;
+      if (len <= 0.01) return '';
+      return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + s.color +
+        '" stroke-width="' + sw + '" stroke-dasharray="' + len.toFixed(2) + ' ' + (c - len).toFixed(2) +
+        '" stroke-dashoffset="' + off.toFixed(2) + '"/>';
+    }).join('');
+
+    var legend = o.segs.map(function (s) {
+      return '<div class="legend-item">' +
+        '<span class="legend-swatch" style="background:' + s.color + '"></span>' +
+        '<span class="legend-name">' + esc(s.name) + '</span>' +
+        '<span class="legend-val">' + s.value + '</span>' +
+        '<span class="legend-pct">' + pct(s.value, total) + '</span>' +
+        '</div>';
+    }).join('');
+
+    return '<div class="donut-wrap">' +
+      '<div class="donut-box">' +
+        '<svg class="donut" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" role="img" aria-label="' + esc(o.centerSub) + ' 分布">' +
+          '<g transform="rotate(-90 ' + cx + ' ' + cy + ')">' +
+            '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + cssVar('--surface-3') + '" stroke-width="' + sw + '"/>' +
+            arcs +
+          '</g>' +
+        '</svg>' +
+        '<div class="donut-center"><b class="num">' + esc(o.centerTop) + '</b><span>' + esc(o.centerSub) + '</span></div>' +
+      '</div>' +
+      '<div class="legend">' + legend + '</div>' +
+      '</div>';
+  }
+
+  /* ------------------------------------------------------------------ 表格 */
+  function filtered() {
+    var q = view.q.trim().toLowerCase();
+    return DATA.kb.entries.filter(function (e) {
+      if (view.ver === 'true' && !e.verified) return false;
+      if (view.ver === 'false' && e.verified) return false;
+      if (view.cat && e.category !== view.cat) return false;
+      if (!q) return true;
+      var hay = [e.id, e.question, e.answer, (e.keywords || []).join(' '), (e.altQuestions || []).join(' '), e.category, e.source].join(' ').toLowerCase();
+      return hay.indexOf(q) >= 0;
+    });
+  }
+
+  function renderTable() {
+    var list = filtered();
+    var tb = $('#rows');
+    if (!list.length) {
+      tb.innerHTML = '<tr class="empty-row"><td colspan="4">没有匹配的词条，试试清除筛选条件。</td></tr>';
+    } else {
+      tb.innerHTML = list.map(function (e) {
+        var tag = e.verified
+          ? '<span class="tag tag-verified">' + ICON.tick + '已核实</span>'
+          : '<span class="tag tag-sim">' + ICON.dot + '模拟示例</span>';
+        var meta = [];
+        if ((e.altQuestions || []).length) meta.push('<span class="mchip"><b>别名</b>' + e.altQuestions.length + ' 条</span>');
+        if ((e.keywords || []).length) meta.push('<span class="mchip"><b>关键词</b>' + esc(e.keywords.join('、')) + '</span>');
+        return '<tr class="row-main" data-id="' + esc(e.id) + '" aria-expanded="false">' +
+            '<td class="cell-q">' + esc(e.question) + '<span class="qid">' + esc(e.id) + '</span></td>' +
+            '<td class="cell-cat">' + esc(e.category) + '</td>' +
+            '<td>' + tag + '</td>' +
+            '<td><span class="row-toggle">' + ICON.chevron + '</span></td>' +
+          '</tr>' +
+          '<tr class="row-detail" hidden><td colspan="4"><div class="detail-inner">' +
+            '<div class="detail-answer">' + esc(e.answer) + '</div>' +
+            (meta.length ? '<div class="detail-meta">' + meta.join('') + '</div>' : '') +
+            '<div class="detail-src"><b>出处：</b>' + esc(e.source || '（未标注）') + '</div>' +
+          '</div></td></tr>';
+      }).join('');
+    }
+    var isFiltered = view.q.trim() || view.cat || view.ver !== 'all';
+    $('#clearFilters').hidden = !isFiltered;
+    $('#rowCount').textContent = '显示 ' + list.length + ' / 共 ' + DATA.kb.entries.length + ' 条' +
+      (view.cat ? '（分类：' + view.cat + '）' : '');
+  }
+
+  function wireTable() {
+    $('#q').addEventListener('input', function () { view.q = this.value; renderTable(); });
+    Array.prototype.forEach.call(document.querySelectorAll('.fchip[data-ver]'), function (b) {
+      b.addEventListener('click', function () {
+        view.ver = this.getAttribute('data-ver');
+        Array.prototype.forEach.call(document.querySelectorAll('.fchip[data-ver]'), function (o) { o.classList.remove('is-on'); });
+        this.classList.add('is-on');
+        renderTable();
+      });
+    });
+    $('#clearFilters').addEventListener('click', function () {
+      view = { q: '', cat: '', ver: 'all' };
+      $('#q').value = '';
+      Array.prototype.forEach.call(document.querySelectorAll('.fchip[data-ver]'), function (o) {
+        o.classList.toggle('is-on', o.getAttribute('data-ver') === 'all');
+      });
+      renderCharts(); renderTable();
+    });
+    $('#catBars').addEventListener('click', function (ev) {
+      var row = ev.target.closest ? ev.target.closest('.bar-row') : null;
+      if (!row) return;
+      var cat = row.getAttribute('data-cat');
+      view.cat = (view.cat === cat) ? '' : cat;
+      renderCharts(); renderTable();
+      if (view.cat) $('#rows') && $('#rows').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    $('#rows').addEventListener('click', function (ev) {
+      var tr = ev.target.closest('.row-main');
+      if (!tr) return;
+      var detail = tr.nextElementSibling;
+      if (!detail || !detail.classList.contains('row-detail')) return;
+      var open = !detail.hidden;
+      detail.hidden = open;
+      tr.classList.toggle('open', !open);
+      tr.setAttribute('aria-expanded', String(!open));
+    });
+  }
+
+  /* ------------------------------------------------------------------ 数据体检 */
+  function runChecks() {
+    var kb = DATA.kb, meta = kb.meta, entries = kb.entries;
+    var cats = meta.categories || [];
+    var list = [];
+
+    // 1. id 唯一
+    var ids = {}, dup = [];
+    entries.forEach(function (e) { if (ids[e.id]) dup.push(e.id); ids[e.id] = 1; });
+    list.push({ name: '<b>条目 id 唯一</b>', pass: dup.length === 0, val: dup.length ? '重复 ' + dup.join('、') : entries.length + ' 个 id 无重复' });
+
+    // 2. 分类合法
+    var badCat = entries.filter(function (e) { return cats.indexOf(e.category) < 0; });
+    list.push({ name: '<b>分类合法</b>', pass: badCat.length === 0, val: badCat.length ? badCat.length + ' 条越界' : '全部属于 meta.categories' });
+
+    // 3. 必填字段
+    var missing = entries.filter(function (e) {
+      return !e.id || !e.category || !e.question || !e.answer || !e.source;
+    });
+    list.push({ name: '<b>必填字段齐全</b>', pass: missing.length === 0, val: missing.length ? missing.length + ' 条缺字段' : 'id/category/question/answer/source' });
+
+    // 4. verified 为布尔
+    var badVer = entries.filter(function (e) { return typeof e.verified !== 'boolean'; });
+    list.push({ name: '<b>verified 为布尔值</b>', pass: badVer.length === 0, val: badVer.length ? badVer.length + ' 条类型异常' : entries.length + ' 条均为布尔' });
+
+    // 5. 同义词无嵌套风险
+    var synOk = true, synMsg = '';
+    try {
+      var pairs = [];
+      (DATA.synonyms.groups || []).forEach(function (g) {
+        (g.variants || []).forEach(function (v) {
+          if (v === g.canonical) return;
+          if (g.canonical.indexOf(v) >= 0) throw new Error('variant「' + v + '」是 canonical「' + g.canonical + '」的子串');
+          pairs.push({ variant: v, canonical: g.canonical });
+        });
+      });
+      pairs.sort(function (a, b) { return b.variant.length - a.variant.length; });
+      for (var i = 0; i < pairs.length; i++)
+        for (var j = i + 1; j < pairs.length; j++)
+          if (pairs[i].canonical.indexOf(pairs[j].variant) >= 0) throw new Error('替换「' + pairs[i].variant + '」后残留「' + pairs[j].variant + '」');
+      synMsg = pairs.length + ' 条替换无嵌套';
+    } catch (e) { synOk = false; synMsg = e.message; }
+    list.push({ name: '<b>同义词表安全</b>', pass: synOk, val: synMsg });
+
+    // 6. 测试用例可解析
+    var badCase = (DATA.cases.cases || []).filter(function (c) {
+      return c.expectId !== null && !ids[c.expectId];
+    });
+    list.push({ name: '<b>测试用例指向有效</b>', pass: badCase.length === 0, val: badCase.length ? badCase.length + ' 条期望 id 不存在' : (DATA.cases.cases || []).length + ' 条用例期望 id 均存在' });
+
+    // 7. 分类均有词条
+    var emptyCat = cats.filter(function (c) { return !entries.some(function (e) { return e.category === c; }); });
+    list.push({ name: '<b>分类均有内容</b>', pass: emptyCat.length === 0, val: emptyCat.length ? '空分类：' + emptyCat.join('、') : cats.length + ' 类均有词条' });
+
+    var passN = list.filter(function (c) { return c.pass; }).length;
+    $('#checkNote').textContent = passN + ' / ' + list.length + ' 项通过';
+    $('#checks').innerHTML = list.map(function (c) {
+      return '<div class="check ' + (c.pass ? 'pass' : 'fail') + '">' +
+        '<span class="check-ico">' + (c.pass ? ICON.check : ICON.warn) + '</span>' +
+        '<span class="check-name">' + c.name + '</span>' +
+        '<span class="check-val">' + esc(c.val) + '</span>' +
+        '</div>';
+    }).join('');
+  }
+
+  /* ------------------------------------------------------------------ 引擎自检 */
+  function runSelfTest() {
+    var list = $('#caseList');
+    if (!window.CampusEngine || !window.CampusEngine.create) {
+      list.innerHTML = '<div class="empty-row" style="padding:12px 4px;color:var(--text-3);font-size:12.5px">未加载到离线引擎（assets/engine-js.js），跳过自检。</div>';
+      $('#stLabel').textContent = '引擎未加载';
+      return;
+    }
+    window.CampusEngine.create({
+      kb: DATA.kb, config: DATA.config, synonyms: DATA.synonyms, stopwords: DATA.stopwords
+    }).then(function (engine) {
+      var cases = DATA.cases.cases || [];
+      return Promise.all(cases.map(function (c) { return engine.ask(c.query); })).then(function (results) {
+        var pass = 0;
+        var html = '';
+        cases.forEach(function (c, i) {
+          var r = results[i];
+          var topId = r.entryId === null ? '-' : r.entryId;
+          var expect = c.expectId === null ? '-' : c.expectId;
+          var ok = topId === expect && (!c.expectConfidence || r.confidence === c.expectConfidence);
+          if (ok) pass++;
+          html += '<div class="case ' + (ok ? 'pass' : 'fail') + '">' +
+            '<span class="case-ico">' + (ok ? ICON.check : ICON.warn) + '</span>' +
+            '<span class="case-q" title="' + esc(c.query) + '">' + esc(c.query) + '</span>' +
+            '<span class="case-conf ' + esc(r.confidence) + '">' + esc(r.confidence) + '</span>' +
+            '</div>';
+        });
+        list.innerHTML = html;
+        var allPass = pass === cases.length;
+        $('#stPass').textContent = pass + ' / ' + cases.length;
+        $('#stPass').className = 'gauge-num num ' + (allPass ? 'ok' : 'warn');
+        $('#stLabel').textContent = allPass ? '全部通过' : '存在未通过用例';
+        var kpi = $('#stKpi');
+        if (kpi) { kpi.textContent = pass + '/' + cases.length; kpi.className = 'kpi-num num ' + (allPass ? 'ok' : 'warn'); }
+        selfTest = { pass: pass, total: cases.length };
+      });
+    }).catch(function (err) {
+      list.innerHTML = '<div class="empty-row" style="padding:12px 4px;color:var(--warn);font-size:12.5px">自检异常：' + esc(err.message) + '</div>';
+      $('#stLabel').textContent = '引擎异常';
+    });
+  }
+
+  /* ------------------------------------------------------------------ 启动 */
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireTable);
+  else wireTable();
+  boot();
+})();
+</script>
+</body>
+</html>

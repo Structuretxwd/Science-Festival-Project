@@ -70,6 +70,15 @@ python -m http.server 8000
 
 注意必须通过 **HTTP 访问**。直接双击 HTML 用 `file://` 打开会被浏览器拦住，读不到本地 JSON 数据文件——页面会给出明确提示，不会白屏。
 
+站点里有两个页面：
+
+| 页面 | 作用 |
+|---|---|
+| `docs/index.html` | 对话主界面（科学节演示用） |
+| `docs/admin.html` | 知识库仪表盘：分布图表、词条总览与筛选、数据完整性体检、离线引擎自检（`28 / 28`）。纯只读，同样零依赖、可断网打开 |
+
+仪表盘与主界面共用 `assets/theme.css` 里的一套深浅主题令牌，并复用 `assets/engine-js.js` 在浏览器内跑 `testcases.json`，因此页面上的自检结果与命令行 `node tools/js-selftest.js` 一致。
+
 ---
 
 ## 你可以照着这些问
@@ -186,11 +195,14 @@ java -cp out campus.SelfTest --explain "食堂几点开饭"   # 解剖 Java 引�
 ```
 docs/                       既是 GitHub Pages 站点，也是 Java 版前端的静态根目录（一份文件两处生效）
   index.html                单页对话界面
+  admin.html                知识库仪表盘（只读运维页：分布图表 + 词条总览 + 数据体检 + 引擎自检）
   assets/
     engine-js.js            JS 版离线检索引擎（与 Engine.java 严格对齐）
     llm-js.js               JS 版浏览器直连大模型
     app.js                  界面逻辑（先探测 /api/health，再决定走哪条链路）
-    app.css                 样式（含深浅两套主题）
+    admin.css               仪表盘样式
+    theme.css               深浅主题令牌（index.html 与 admin.html 共用，改主题只改这一处）
+    app.css                 对话界面样式
   data/                     ★ Java 与 JS 共享的唯一数据源
     kb.json                 知识库（50 条）
     synonyms.json           同义词表（40 组替换规则）
